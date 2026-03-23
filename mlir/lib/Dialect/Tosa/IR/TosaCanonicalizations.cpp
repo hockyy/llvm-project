@@ -1920,6 +1920,9 @@ OpFoldResult TransposeOp::fold(FoldAdaptor adaptor) {
   if (!llvm::equal(llvm::seq<int32_t>(0, perms.size()), perms))
     return {};
 
+  if (resultTy != getInput1().getType())
+    return {};
+
   return getInput1();
 }
 

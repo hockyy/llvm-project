@@ -1388,3 +1388,15 @@ func.func @test_canonicalize_narrowing_cast_i32_to_i8_to_i16(%arg0: tensor<13x21
   %1 = tosa.cast %0 : (tensor<13x21x3xi8>) -> tensor<13x21x3xi16>
   return %1 : tensor<13x21x3xi16>
 }
+
+// -----
+
+// CHECK-LABEL: test_canonicalize_different_type_identity_transpose(
+// CHECK: tosa.const_shape
+// CHECK: %[[RESHAPE:.+]] = tosa.reshape
+// CHECK-SAME: -> tensor<*xi32>
+// CHECK: return %[[RESHAPE]]
+func.func @test_canonicalize_different_type_identity_transpose(%arg0: tensor<3x2xi32>) -> tensor<*xi32> {
+  %0 = tosa.transpose %arg0 {perms = array<i32: 0, 1>} : (tensor<3x2xi32>) -> tensor<*xi32>
+  return %0 : tensor<*xi32>
+}
