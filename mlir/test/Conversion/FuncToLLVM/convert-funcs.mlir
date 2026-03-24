@@ -63,12 +63,18 @@ func.func @variadic_func(%arg0: i32) attributes { "func.varargs" = true } {
 
 // CHECK-LABEL: llvm.func @target_cpu()
 // CHECK-SAME: target_cpu = "gfx90a"
-func.func private @target_cpu() attributes { "target_cpu" = "gfx90a" }
+func.func private @target_cpu() attributes { "llvm.target_cpu" = "gfx90a" }
 
 // CHECK-LABEL: llvm.func @target_features()
 // CHECK-SAME: target_features = #llvm.target_features<["+sme", "+sve"]>
 func.func private @target_features() attributes {
-  "target_features" = #llvm.target_features<["+sme", "+sve"]>
+  "llvm.target_features" = #llvm.target_features<["+sme", "+sve"]>
+}
+
+// CHECK-LABEL: llvm.func @passthrough_attr()
+// CHECK-SAME: passthrough = ["presplitcoroutine"]
+func.func private @passthrough_attr() attributes {
+  "llvm.passthrough" = ["presplitcoroutine"]
 }
 
 // -----
@@ -102,4 +108,19 @@ func.func @variadic_func(%arg0: i32) attributes { "func.varargs" = true, "llvm.e
 // CHECK-LABEL: llvm.func @empty_res_attrs()
 func.func @empty_res_attrs() attributes {res_attrs = []} {
   return
+}
+
+// -----
+
+// Regression: internal `llvm.linkage` must lower correctly when a `gpu.module` is a sibling in
+// the same parent `module` (host/device split in one file).
+// CHECK-LABEL: llvm.func internal @host_next_to_gpu_module
+// CHECK: gpu.module @gpu_mod
+func.func @host_next_to_gpu_module() attributes { llvm.linkage = #llvm.linkage<internal> } {
+  return
+}
+gpu.module @gpu_mod {
+  gpu.func @gpu_kernel() kernel {
+    gpu.return
+  }
 }

@@ -35,6 +35,7 @@
 #include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Type.h"
+#include "llvm/Support/DebugLog.h"
 #include "llvm/Support/FormatVariadic.h"
 #include <optional>
 
@@ -47,6 +48,7 @@ namespace mlir {
 using namespace mlir;
 
 #define PASS_NAME "convert-func-to-llvm"
+#define DEBUG_TYPE PASS_NAME
 
 static constexpr StringRef varargsAttrName = "func.varargs";
 static constexpr StringRef linkageAttrName = "llvm.linkage";
@@ -59,17 +61,116 @@ static bool shouldUseBarePtrCallConv(Operation *op,
          typeConverter->getOptions().useBarePtrCallConv;
 }
 
+static bool isDiscardableAttr(StringRef name) {
+  return name == linkageAttrName || name == varargsAttrName ||
+         name == LLVM::LLVMDialect::getReadnoneAttrName();
+}
+
 /// Only retain those attributes that are not constructed by
 /// `LLVMFuncOp::build`.
 static void filterFuncAttributes(FunctionOpInterface func,
                                  SmallVectorImpl<NamedAttribute> &result) {
   for (const NamedAttribute &attr : func->getDiscardableAttrs()) {
-    if (attr.getName() == linkageAttrName ||
-        attr.getName() == varargsAttrName ||
-        attr.getName() == LLVM::LLVMDialect::getReadnoneAttrName())
+    if (isDiscardableAttr(attr.getName().strref()))
       continue;
     result.push_back(attr);
   }
+}
+
+/// Add custom lowered funcOp to llvm.func attributes here.
+struct LoweredFuncAttrs {
+  LLVM::Linkage linkage = LLVM::Linkage::External;
+  bool hasReadnone = false;
+  SmallVector<NamedAttribute, 4> attrs;
+};
+
+static LogicalResult parseLinkageAttr(Attribute attrValue,
+                                      LLVM::Linkage &linkage) {
+  if (auto linkageAttr = dyn_cast<mlir::LLVM::LinkageAttr>(attrValue)) {
+    linkage = linkageAttr.getLinkage();
+    return success();
+  }
+  return failure();
+}
+
+static LogicalResult parseReadnoneAttr(Attribute attrValue, bool &hasReadnone) {
+  if (isa<UnitAttr>(attrValue)) {
+    hasReadnone = true;
+    return success();
+  }
+  return failure();
+}
+
+/// Lower discardable function attributes on `func.func` to attributes expected
+/// by `llvm.func`.
+static FailureOr<LoweredFuncAttrs>
+lowerFuncAttributes(FunctionOpInterface func) {
+  MLIRContext *ctx = func->getContext();
+  LoweredFuncAttrs lowered;
+  llvm::SmallDenseSet<StringRef> odsAttrNames(
+      LLVM::LLVMFuncOp::getAttributeNames().begin(),
+      LLVM::LLVMFuncOp::getAttributeNames().end());
+
+  // Obtain specific attributes and add them to the lowered attributes.
+  for (const NamedAttribute &attr : func->getDiscardableAttrs()) {
+    StringRef attrName = attr.getName().strref();
+    if (attrName == linkageAttrName) {
+      if (failed(parseLinkageAttr(attr.getValue(), lowered.linkage))) {
+        func->emitError() << "Contains " << linkageAttrName
+                          << " attribute not of type LLVM::LinkageAttr";
+        return failure();
+      }
+      continue;
+    }
+
+    if (attrName == LLVM::LLVMDialect::getReadnoneAttrName()) {
+      if (failed(parseReadnoneAttr(attr.getValue(), lowered.hasReadnone))) {
+        func->emitError() << "Contains "
+                          << LLVM::LLVMDialect::getReadnoneAttrName()
+                          << " attribute not of type UnitAttr";
+        return failure();
+      }
+      continue;
+    }
+
+    // TODO: discardable attributes should not be used again after this lowering
+    if (attrName == LLVM::LLVMDialect::getEmitCWrapperAttrName()) {
+      lowered.attrs.emplace_back(attr);
+      continue;
+    }
+
+    if (attrName == barePtrAttrName) {
+      lowered.attrs.emplace_back(attr);
+      continue;
+    }
+
+    // TODO: discarding this operation is very breaking, make sure all inherent
+    // attributes have `llvm.*` prefix.
+    if (odsAttrNames.contains(attrName)) {
+      LDBG()
+          << "LLVM specific attributes should use llvm. prefix in the future";
+      // continue;
+    }
+
+    if (isDiscardableAttr(attrName)) {
+      continue;
+    }
+
+    // Map llvm.<name> -> inherent <name> when <name> is an LLVMFuncOp ODS attr.
+    StringRef inherent = attrName;
+    LDBG() << "inherent: " << inherent;
+    if (inherent.consume_front("llvm.")) {
+      if (odsAttrNames.contains(inherent)) {
+        LDBG() << "inserting to attrs: " << inherent;
+        lowered.attrs.emplace_back(StringAttr::get(ctx, inherent),
+                                   attr.getValue());
+      }
+    } else {
+      lowered.attrs.push_back(attr);
+    }
+  }
+
+  return lowered;
 }
 
 /// Propagate argument/results attributes.
@@ -288,6 +389,7 @@ static void restoreByValRefArgumentType(
   }
 }
 
+/// TODO: Refactor this function to be more modular and easier to understand.
 FailureOr<LLVM::LLVMFuncOp> mlir::convertFuncOpToLLVMFuncOp(
     FunctionOpInterface funcOp, ConversionPatternRewriter &rewriter,
     const LLVMTypeConverter &converter, SymbolTableCollection *symbolTables) {
@@ -320,35 +422,10 @@ FailureOr<LLVM::LLVMFuncOp> mlir::convertFuncOpToLLVMFuncOp(
         return funcOp.emitError("C interface for variadic functions is not "
                                 "supported yet.");
 
-  // Create an LLVM function, use external linkage by default until MLIR
-  // functions have linkage.
-  LLVM::Linkage linkage = LLVM::Linkage::External;
-  if (funcOp->hasAttr(linkageAttrName)) {
-    auto attr =
-        dyn_cast<mlir::LLVM::LinkageAttr>(funcOp->getAttr(linkageAttrName));
-    if (!attr) {
-      funcOp->emitError() << "Contains " << linkageAttrName
-                          << " attribute not of type LLVM::LinkageAttr";
-      return rewriter.notifyMatchFailure(
-          funcOp, "Contains linkage attribute not of type LLVM::LinkageAttr");
-    }
-    linkage = attr.getLinkage();
-  }
-
-  // Check for invalid attributes.
-  StringRef readnoneAttrName = LLVM::LLVMDialect::getReadnoneAttrName();
-  if (funcOp->hasAttr(readnoneAttrName)) {
-    auto attr = funcOp->getAttrOfType<UnitAttr>(readnoneAttrName);
-    if (!attr) {
-      funcOp->emitError() << "Contains " << readnoneAttrName
-                          << " attribute not of type UnitAttr";
-      return rewriter.notifyMatchFailure(
-          funcOp, "Contains readnone attribute not of type UnitAttr");
-    }
-  }
-
-  SmallVector<NamedAttribute, 4> attributes;
-  filterFuncAttributes(funcOp, attributes);
+  FailureOr<LoweredFuncAttrs> loweredAttrs = lowerFuncAttributes(funcOp);
+  if (failed(loweredAttrs))
+    return rewriter.notifyMatchFailure(funcOp,
+                                       "failed to lower func attributes");
 
   Operation *symbolTableOp = funcOp->getParentWithTrait<OpTrait::SymbolTable>();
 
@@ -357,10 +434,17 @@ FailureOr<LLVM::LLVMFuncOp> mlir::convertFuncOpToLLVMFuncOp(
     symbolTable.remove(funcOp);
   }
 
-  auto newFuncOp = LLVM::LLVMFuncOp::create(
-      rewriter, funcOp.getLoc(), funcOp.getName(), llvmType, linkage,
-      /*dsoLocal=*/false, /*cconv=*/LLVM::CConv::C, /*comdat=*/nullptr,
-      attributes);
+  /// TODO: Improve create function API
+  for (auto attr : loweredAttrs->attrs) {
+    LDBG() << "attr: " << attr.getName() << " value: " << attr.getValue();
+  }
+  LDBG() << "loweredAttrs->linkage: " << loweredAttrs->linkage;
+
+  auto newFuncOp =
+      LLVM::LLVMFuncOp::create(rewriter, funcOp.getLoc(), funcOp.getName(),
+                               llvmType, loweredAttrs->linkage,
+                               /*dsoLocal=*/false, /*cconv=*/LLVM::CConv::C,
+                               /*comdat=*/nullptr, loweredAttrs->attrs);
 
   if (symbolTables && symbolTableOp) {
     auto ip = rewriter.getInsertionPoint();
@@ -372,7 +456,7 @@ FailureOr<LLVM::LLVMFuncOp> mlir::convertFuncOpToLLVMFuncOp(
       .setVisibility(funcOp.getVisibility());
 
   // Create a memory effect attribute corresponding to readnone.
-  if (funcOp->hasAttr(readnoneAttrName)) {
+  if (loweredAttrs->hasReadnone) {
     auto memoryAttr = LLVM::MemoryEffectsAttr::get(
         rewriter.getContext(), {/*other=*/LLVM::ModRefInfo::NoModRef,
                                 /*argMem=*/LLVM::ModRefInfo::NoModRef,
