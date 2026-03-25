@@ -94,7 +94,8 @@ func.func @caller_private_callee(%arg1: f32) -> i32 {
 
 // -----
 
-func.func private @badllvmlinkage(i32) attributes { "llvm.linkage" = 3 : i64 } // expected-error {{Contains llvm.linkage attribute not of type LLVM::LinkageAttr}}
+// expected-error@+1{{'func.func' op invalid llvm.func propertyInvalid attribute `linkage` in property conversion: 3 : i64}}
+func.func private @badllvmlinkage(i32) attributes { "llvm.linkage" = 3 : i64 }
 
 // -----
 
