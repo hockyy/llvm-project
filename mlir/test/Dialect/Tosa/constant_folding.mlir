@@ -28,6 +28,41 @@ func.func @try_fold_equal_with_unranked_tensor(%arg0: tensor<4xi32>, %arg1: tens
 
 // -----
 
+// CHECK-LABEL: func @try_fold_unranked_constant_results
+func.func @try_fold_unranked_constant_results() {
+  // CHECK: tosa.equal
+  // CHECK: tosa.greater
+  // CHECK: tosa.greater_equal
+  // CHECK: tosa.cast
+  // CHECK: tosa.reciprocal
+  // CHECK-NEXT: return
+  %lhs = arith.constant dense<1> : tensor<1xi32>
+  %rhs = arith.constant dense<2> : tensor<1xi32>
+  %f = arith.constant dense<2.0> : tensor<1xf32>
+  %0 = tosa.equal %lhs, %rhs : (tensor<1xi32>, tensor<1xi32>) -> tensor<*xi1>
+  %1 = tosa.greater %lhs, %rhs : (tensor<1xi32>, tensor<1xi32>) -> tensor<*xi1>
+  %2 = tosa.greater_equal %lhs, %rhs : (tensor<1xi32>, tensor<1xi32>) -> tensor<*xi1>
+  %3 = tosa.cast %lhs : (tensor<1xi32>) -> tensor<*xf32>
+  %4 = tosa.reciprocal %f : (tensor<1xf32>) -> tensor<*xf32>
+  return
+}
+
+// -----
+
+// CHECK-LABEL: func @try_fold_unranked_identity_results
+func.func @try_fold_unranked_identity_results(%arg0: tensor<1xf32>) {
+  // CHECK: tosa.transpose
+  // CHECK: tosa.reverse
+  // CHECK: tosa.abs
+  // CHECK-NEXT: return
+  %0 = tosa.transpose %arg0 { perms = array<i32: 0> } : (tensor<1xf32>) -> tensor<*xf32>
+  %1 = tosa.reverse %arg0 {axis = 0 : i32} : (tensor<1xf32>) -> tensor<*xf32>
+  %3 = tosa.abs %arg0 : (tensor<1xf32>) -> tensor<*xf32>
+  return
+}
+
+// -----
+
 // CHECK-LABEL: @fold_add_zero_rhs_f32
 func.func @fold_add_zero_rhs_f32(%arg0: tensor<f32>) -> tensor<f32> {
   %zero = "tosa.const"() {values = dense<0.0> : tensor<f32>} : () -> tensor<f32>
@@ -1489,4 +1524,3 @@ func.func @test_concat_shape_total_rank9_shapes() -> !tosa.shape<9> {
 
   return %abc : !tosa.shape<9>
 }
-// -----

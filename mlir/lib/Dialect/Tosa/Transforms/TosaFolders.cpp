@@ -242,6 +242,8 @@ struct TosaFoldConstantTranspose : public OpRewritePattern<tosa::TransposeOp> {
   LogicalResult matchAndRewrite(tosa::TransposeOp op,
                                 PatternRewriter &rewriter) const override {
     auto outputType = cast<ShapedType>(op.getType());
+    if (!outputType.hasStaticShape())
+      return failure();
     // TOSA supports quantized types.
     if (!outputType.getElementType().isIntOrIndexOrFloat())
       return failure();
@@ -269,6 +271,8 @@ struct TosaFoldConstantTranspose : public OpRewritePattern<tosa::TransposeOp> {
   }
 };
 
+/// Fold `tosa.reciprocal` into `tosa.const` when the operand is a dense float
+/// TOSA constant, types match, and `constantUnaryOpShouldBeFolded` allows it.
 struct TosaFoldConstantReciprocal : public OpRewritePattern<ReciprocalOp> {
 
   using OpRewritePattern::OpRewritePattern;
@@ -294,6 +298,10 @@ struct TosaFoldConstantReciprocal : public OpRewritePattern<ReciprocalOp> {
           recip, "Currently, reciprocals will only be folded if the input "
                  "tensor has a single user");
     }
+
+    if (inputTensor.getType() != recip.getType())
+      return rewriter.notifyMatchFailure(
+          recip, "input tensor and reciprocal output have different type");
 
     // Create a new tensor with the updated values
     auto newTensor = applyElementWise<APFloat, APFloat, FloatType>(
