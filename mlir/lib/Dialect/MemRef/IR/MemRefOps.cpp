@@ -2282,6 +2282,12 @@ public:
     SmallVector<OpFoldResult> sizes = op.getConstifiedMixedSizes();
     SmallVector<OpFoldResult> strides = op.getConstifiedMixedStrides();
 
+    for (auto sizeOfr : sizes) {
+      if (auto cst = getConstantIntValue(sizeOfr))
+        if (cst.value() < 0)
+          return rewriter.notifyMatchFailure(op, "negative size");
+    }
+
     // TODO: Using counting comparison instead of direct comparison because
     // getMixedValues (and therefore ReinterpretCastOp::getMixed...) returns
     // IntegerAttrs, while constifyIndexValues (and therefore
