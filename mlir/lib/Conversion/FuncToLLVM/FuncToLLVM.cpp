@@ -95,21 +95,18 @@ lowerFuncAttributes(FunctionOpInterface func) {
       LLVM::LLVMFuncOp::getAttributeNames().end());
 
   NamedAttrList inherentAttrs;
-  for (auto &odsName : odsAttrNames) {
-    LDBG() << odsName;
-  }
 
   for (const NamedAttribute &attr : func->getDiscardableAttrs()) {
     StringRef attrName = attr.getName().strref();
 
     if (odsAttrNames.contains(attrName)) {
-      LDBG() << "LLVM specific attributes should use llvm.* prefix";
+      LDBG() << "LLVM specific attributes: " << attrName
+             << "should use llvm.* prefix, discarding it";
       continue;
     }
 
     StringRef inherent = attrName;
     if (inherent.consume_front("llvm.") && odsAttrNames.contains(inherent)) {
-      LDBG() << "Setting " << inherent << " " << attr.getValue() << "\n";
       inherentAttrs.set(inherent, attr.getValue()); // collect inherent attrs
     } else {
       lowered.discardableAttrs.push_back(attr);
@@ -130,7 +127,6 @@ lowerFuncAttributes(FunctionOpInterface func) {
   return lowered;
 }
 
-// In your pass .cpp (anonymous namespace), next to other lowering helpers.
 static void buildLLVMFuncProperties(PatternRewriter &rewriter,
                                     FunctionOpInterface srcFunc,
                                     Type llvmFuncType,
@@ -139,7 +135,6 @@ static void buildLLVMFuncProperties(PatternRewriter &rewriter,
   props.sym_name = rewriter.getStringAttr(srcFunc.getName());
   props.function_type = TypeAttr::get(llvmFuncType);
   props.setCConv(LLVM::CConvAttr::get(ctx, LLVM::CConv::C));
-  LDBG() << props.getLinkage() << "\n";
 }
 
 /// Propagate argument/results attributes.

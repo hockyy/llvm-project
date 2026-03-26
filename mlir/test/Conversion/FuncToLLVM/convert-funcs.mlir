@@ -113,8 +113,7 @@ func.func @empty_res_attrs() attributes {res_attrs = []} {
 
 // -----
 
-// Regression: internal `llvm.linkage` must lower correctly when a `gpu.module` is a sibling in
-// the same parent `module` (host/device split in one file).
+// Internal `llvm.linkage` must lower correctly
 // CHECK-LABEL: llvm.func internal @host_next_to_gpu_module
 // CHECK: gpu.module @gpu_mod
 func.func @host_next_to_gpu_module() attributes { llvm.linkage = #llvm.linkage<internal> } {
