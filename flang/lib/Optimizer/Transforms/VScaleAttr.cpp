@@ -32,12 +32,14 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include <mlir/IR/Diagnostics.h>
 
 #include <algorithm>
-#include <mlir/IR/Diagnostics.h>
+#include <string>
 
 namespace fir {
 #define GEN_PASS_DEF_VSCALEATTR
@@ -47,6 +49,14 @@ namespace fir {
 #define DEBUG_TYPE "vscale-attr"
 
 namespace {
+
+/// See FunctionAttr.cpp: `llvm.func` properties on `func.func` need the `llvm.`
+/// prefix for convert-func-to-llvm.
+static mlir::StringAttr getLlvmFuncPropertyAttrName(mlir::MLIRContext *ctx,
+                                                    mlir::StringAttr baseName) {
+  std::string storage = (llvm::Twine("llvm.") + baseName.getValue()).str();
+  return mlir::StringAttr::get(ctx, storage);
+}
 
 class VScaleAttrPass : public fir::impl::VScaleAttrBase<VScaleAttrPass> {
 public:
@@ -80,11 +90,15 @@ void VScaleAttrPass::runOnOperation() {
     return signalPassFailure();
   }
 
-  auto context = &getContext();
+  mlir::MLIRContext *context = &getContext();
+  auto llvmFuncOpName =
+      mlir::OperationName(mlir::LLVM::LLVMFuncOp::getOperationName(), context);
 
   auto intTy = mlir::IntegerType::get(context, 32);
 
-  func->setAttr("vscale_range",
+  func->setAttr(getLlvmFuncPropertyAttrName(
+                    context, mlir::LLVM::LLVMFuncOp::getVscaleRangeAttrName(
+                                 llvmFuncOpName)),
                 mlir::LLVM::VScaleRangeAttr::get(
                     context, mlir::IntegerAttr::get(intTy, vscaleMin),
                     mlir::IntegerAttr::get(intTy, vscaleMax)));
