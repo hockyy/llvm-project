@@ -242,7 +242,7 @@ struct TosaFoldConstantTranspose : public OpRewritePattern<tosa::TransposeOp> {
   LogicalResult matchAndRewrite(tosa::TransposeOp op,
                                 PatternRewriter &rewriter) const override {
     auto outputType = cast<ShapedType>(op.getType());
-    if (!outputType.hasStaticShape())
+    if (!outputType.hasRank() || !outputType.hasStaticShape())
       return failure();
     // TOSA supports quantized types.
     if (!outputType.getElementType().isIntOrIndexOrFloat())
@@ -271,8 +271,6 @@ struct TosaFoldConstantTranspose : public OpRewritePattern<tosa::TransposeOp> {
   }
 };
 
-/// Fold `tosa.reciprocal` into `tosa.const` when the operand is a dense float
-/// TOSA constant, types match, and `constantUnaryOpShouldBeFolded` allows it.
 struct TosaFoldConstantReciprocal : public OpRewritePattern<ReciprocalOp> {
 
   using OpRewritePattern::OpRewritePattern;

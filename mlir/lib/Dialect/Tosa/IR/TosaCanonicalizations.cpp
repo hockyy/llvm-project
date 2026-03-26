@@ -955,9 +955,7 @@ binaryFolder(DenseElementsAttr lhs, DenseElementsAttr rhs, ShapedType returnTy,
   if (!lhs || !rhs)
     return {};
 
-  // DenseElementsAttr::get needs a static shape. Result types may be unranked
-  // (no RankedTensorType) or ranked-dynamic while operands are dense splats.
-  if (!returnTy || !returnTy.hasStaticShape())
+  if (!returnTy.hasRank() || !returnTy.hasStaticShape())
     return {};
 
   const auto lETy = llvm::cast<ShapedType>(lhs.getType()).getElementType();
@@ -1008,7 +1006,7 @@ static DenseElementsAttr unaryFolder(DenseElementsAttr val, ShapedType returnTy,
   if (!val)
     return {};
 
-  if (!returnTy || !returnTy.hasStaticShape())
+  if (!returnTy.hasRank() || !returnTy.hasStaticShape())
     return {};
 
   const auto vETy = llvm::cast<ShapedType>(val.getType()).getElementType();
@@ -1513,7 +1511,7 @@ OpFoldResult SubOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult GreaterOp::fold(FoldAdaptor adaptor) {
-  auto resultTy = llvm::dyn_cast<ShapedType>(getType());
+  auto resultTy = llvm::cast<ShapedType>(getType());
   auto lhsAttr =
       llvm::dyn_cast_if_present<DenseElementsAttr>(adaptor.getInput1());
   auto rhsAttr =
@@ -1526,7 +1524,7 @@ OpFoldResult GreaterOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult GreaterEqualOp::fold(FoldAdaptor adaptor) {
-  auto resultTy = llvm::dyn_cast<ShapedType>(getType());
+  auto resultTy = llvm::cast<ShapedType>(getType());
   auto lhsAttr =
       llvm::dyn_cast_if_present<DenseElementsAttr>(adaptor.getInput1());
   auto rhsAttr =
@@ -1539,7 +1537,7 @@ OpFoldResult GreaterEqualOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult EqualOp::fold(FoldAdaptor adaptor) {
-  auto resultTy = llvm::dyn_cast<ShapedType>(getType());
+  auto resultTy = llvm::cast<ShapedType>(getType());
   auto lhsAttr =
       llvm::dyn_cast_if_present<DenseElementsAttr>(adaptor.getInput1());
   auto rhsAttr =
@@ -1550,7 +1548,7 @@ OpFoldResult EqualOp::fold(FoldAdaptor adaptor) {
 
   // If we are comparing an integer value to itself it is always true. We
   // can not do this with float due to float values.
-  if (llvm::isa<IntegerType>(lhsTy.getElementType()) && resultTy &&
+  if (llvm::isa<IntegerType>(lhsTy.getElementType()) && resultTy.hasRank() &&
       resultTy.hasStaticShape() && lhs == rhs) {
     return DenseElementsAttr::get(resultTy, true);
   }
@@ -1571,7 +1569,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
 
   auto inTy = llvm::cast<ShapedType>(getInput().getType());
   auto outTy = llvm::cast<ShapedType>(getType());
-  if (!outTy.hasStaticShape())
+  if (!outTy.hasRank() || !outTy.hasStaticShape())
     return {};
   auto inETy = inTy.getElementType();
   auto outETy = outTy.getElementType();
@@ -1921,7 +1919,7 @@ OpFoldResult TransposeOp::fold(FoldAdaptor adaptor) {
   // Transposing splat values just means reshaping.
   if (auto input =
           llvm::dyn_cast_if_present<DenseElementsAttr>(adaptor.getInput1())) {
-    if (input.isSplat() && resultTy.hasStaticShape() &&
+    if (input.isSplat() && resultTy.hasRank() && resultTy.hasStaticShape() &&
         input.getType().getElementType() == resultTy.getElementType())
       return input.reshape(resultTy);
   }
@@ -2020,7 +2018,7 @@ OpFoldResult tosa::ReciprocalOp::fold(FoldAdaptor adaptor) {
     return {};
 
   auto shapeType = llvm::cast<ShapedType>(getType());
-  if (!shapeType.hasStaticShape())
+  if (!shapeType.hasRank() || !shapeType.hasStaticShape())
     return {};
   if (auto floatType = llvm::dyn_cast<FloatType>(inputAttr.getElementType())) {
     auto floatVal = inputAttr.getSplatValue<APFloat>();
