@@ -106,11 +106,10 @@ lowerFuncAttributes(FunctionOpInterface func) {
     }
 
     StringRef inherent = attrName;
-    if (inherent.consume_front("llvm.") && odsAttrNames.contains(inherent)) {
+    if (inherent.consume_front("llvm.") && odsAttrNames.contains(inherent))
       inherentAttrs.set(inherent, attr.getValue()); // collect inherent attrs
-    } else {
+    else
       lowered.discardableAttrs.push_back(attr);
-    }
   }
 
   // Convert collected inherent attrs into typed properties.
