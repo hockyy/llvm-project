@@ -1759,17 +1759,13 @@ OpFoldResult ReverseOp::fold(FoldAdaptor adaptor) {
   auto operand = getInput1();
   auto operandTy = llvm::cast<ShapedType>(operand.getType());
   auto axis = getAxis();
-  bool noOpReverse =
-      llvm::isa_and_nonnull<SplatElementsAttr>(adaptor.getInput1());
-
   // If the dim-length is 1, or reversing axis is unit-dim, also a no-op.
-  noOpReverse |= operandTy.hasRank() &&
-                 (operandTy.getRank() == 0 || operandTy.getDimSize(axis) == 1);
-
-  if (noOpReverse)
-    return foldToInputIfTypeMatches(*this, operand);
-
-  return {};
+  const bool isSplatInput =
+      llvm::isa_and_nonnull<SplatElementsAttr>(adaptor.getInput1());
+  if (!operandTy.hasRank() ||
+      (!isSplatInput && operandTy.getDimSize(axis) != 1))
+    return {};
+  return foldToInputIfTypeMatches(*this, operand);
 }
 
 OpFoldResult SliceOp::fold(FoldAdaptor adaptor) {
