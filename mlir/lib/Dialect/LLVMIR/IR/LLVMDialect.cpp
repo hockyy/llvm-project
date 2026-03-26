@@ -3035,6 +3035,7 @@ void LLVMFuncOp::build(OpBuilder &builder, OperationState &result,
   if (functionEntryCount)
     result.addAttribute(getFunctionEntryCountAttrName(result.name),
                         builder.getI64IntegerAttr(functionEntryCount.value()));
+#ifndef NDEBUG
   std::optional<NamedAttribute> duplicate = result.attributes.findDuplicate();
   if (duplicate.has_value()) {
     llvm::report_fatal_error(
@@ -3042,6 +3043,7 @@ void LLVMFuncOp::build(OpBuilder &builder, OperationState &result,
               "to be constructed by the builder: ") +
         duplicate->getName().str());
   }
+#endif
   if (argAttrs.empty())
     return;
 
