@@ -1759,15 +1759,16 @@ OpFoldResult ReverseOp::fold(FoldAdaptor adaptor) {
   auto operand = getInput1();
   auto operandTy = llvm::cast<ShapedType>(operand.getType());
   auto axis = getAxis();
-  // Check if the reverse is a no-op
-  // If the operand is a splat, the reverse is a no-op.
   bool noOpReverse =
       llvm::isa_and_nonnull<SplatElementsAttr>(adaptor.getInput1());
+
   // If the dim-length is 1, or reversing axis is unit-dim, also a no-op.
-  noOpReverse |= (operandTy.hasRank() && (operandTy.getRank() == 0 ||
-                                          operandTy.getDimSize(axis) == 1));
+  noOpReverse |= operandTy.hasRank() &&
+                 (operandTy.getRank() == 0 || operandTy.getDimSize(axis) == 1);
+
   if (noOpReverse)
     return foldToInputIfTypeMatches(*this, operand);
+
   return {};
 }
 
