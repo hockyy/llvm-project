@@ -32,8 +32,7 @@ namespace {
 /// into `llvm.func` properties (bare ODS names are ignored as legacy spellings)
 static mlir::StringAttr getLlvmFuncPropertyAttrName(mlir::MLIRContext *ctx,
                                                     mlir::StringAttr baseName) {
-  std::string storage = (llvm::Twine("llvm.") + baseName.getValue()).str();
-  return mlir::StringAttr::get(ctx, storage);
+  return mlir::StringAttr::get(ctx, llvm::Twine("llvm.") + baseName.getValue());
 }
 
 class FunctionAttrPass : public fir::impl::FunctionAttrBase<FunctionAttrPass> {
