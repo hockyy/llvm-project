@@ -84,7 +84,7 @@ struct LoweredFuncAttrs {
 };
 
 /// Lower discardable function attributes on `func.func` to attributes expected
-/// by `llvm.func`.static FailureOr<LoweredFuncAttrs>
+/// by `llvm.func`.
 static FailureOr<LoweredFuncAttrs>
 lowerFuncAttributes(FunctionOpInterface func) {
   MLIRContext *ctx = func->getContext();
