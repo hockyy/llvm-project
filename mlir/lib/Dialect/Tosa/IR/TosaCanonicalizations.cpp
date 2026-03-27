@@ -32,9 +32,8 @@ using namespace mlir;
 using namespace mlir::tosa;
 
 namespace {
-template <typename OpTy>
-OpFoldResult foldToInputIfTypeMatches(OpTy op, Value input) {
-  return input.getType() == op.getType() ? OpFoldResult(input) : OpFoldResult{};
+OpFoldResult foldToInputIfTypeMatches(Type typeRef, Value input) {
+  return input.getType() == typeRef ? OpFoldResult(input) : OpFoldResult{};
 }
 } // namespace
 
@@ -1752,7 +1751,7 @@ OpFoldResult ResizeOp::fold(FoldAdaptor adaptor) {
     return {};
   }
 
-  return foldToInputIfTypeMatches(*this, getInput());
+  return foldToInputIfTypeMatches(getType(), getInput());
 }
 
 OpFoldResult ReverseOp::fold(FoldAdaptor adaptor) {
@@ -1765,7 +1764,7 @@ OpFoldResult ReverseOp::fold(FoldAdaptor adaptor) {
   if (!operandTy.hasRank() ||
       (!isSplatInput && operandTy.getDimSize(axis) != 1))
     return {};
-  return foldToInputIfTypeMatches(*this, operand);
+  return foldToInputIfTypeMatches(getType(), operand);
 }
 
 OpFoldResult SliceOp::fold(FoldAdaptor adaptor) {
@@ -1927,7 +1926,7 @@ OpFoldResult TransposeOp::fold(FoldAdaptor adaptor) {
   if (!llvm::equal(llvm::seq<int32_t>(0, perms.size()), perms))
     return {};
 
-  return foldToInputIfTypeMatches(*this, getInput1());
+  return foldToInputIfTypeMatches(getType(), getInput1());
 }
 
 OpFoldResult tosa::NegateOp::fold(FoldAdaptor adaptor) {
@@ -1960,14 +1959,14 @@ OpFoldResult tosa::NegateOp::fold(FoldAdaptor adaptor) {
     return {};
   }
 
-  return foldToInputIfTypeMatches(*this, definingOp.getInput1());
+  return foldToInputIfTypeMatches(getType(), definingOp.getInput1());
 }
 
 OpFoldResult tosa::AbsOp::fold(FoldAdaptor adaptor) {
   auto input = getInput1();
   // Element-wise abs(abs(x)) = abs(x)
   if (input.getDefiningOp<tosa::AbsOp>())
-    return foldToInputIfTypeMatches(*this, input);
+    return foldToInputIfTypeMatches(getType(), input);
 
   return {};
 }
