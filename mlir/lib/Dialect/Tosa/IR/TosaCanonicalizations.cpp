@@ -430,7 +430,7 @@ struct ClampIsNoOp : public OpRewritePattern<tosa::ClampOp> {
   LogicalResult matchAndRewrite(tosa::ClampOp op,
                                 PatternRewriter &rewriter) const override {
     Value input = op.getInput();
-    auto inputType = llvm::dyn_cast<ShapedType>(op.getInput().getType());
+    auto inputType = llvm::cast<ShapedType>(op.getInput().getType());
     auto inputElementType = inputType.getElementType();
 
     if (isa<FloatType>(inputElementType)) {
