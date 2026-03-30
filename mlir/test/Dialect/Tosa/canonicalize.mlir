@@ -952,7 +952,7 @@ func.func @dont_canonicalize_unranked_clamp(%arg0 : tensor<*xf32>) -> tensor<*xf
 
 // -----
 
-// CHECK-LABEL: @dont_canonicalize_unranked_clamp
+// CHECK-LABEL: @dont_canonicalize_unranked_to_ranked_clamp
 func.func @dont_canonicalize_unranked_to_ranked_clamp(%arg0 : tensor<*xf32>) -> tensor<1xf32> {
   // CHECK: tosa.clamp
   %0 = tosa.clamp %arg0 {min_val = 0.0 : f32, max_val = 1.0 : f32} : (tensor<*xf32>) -> tensor<1xf32>
