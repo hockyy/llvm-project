@@ -19,6 +19,7 @@
 #include "mlir/Conversion/ConvertToLLVM/ToLLVMInterface.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
+#include "mlir/Conversion/LLVMCommon/LowerFunctionDiscardablesToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/FunctionCallUtils.h"
@@ -75,65 +76,6 @@ static void filterFuncAttributes(FunctionOpInterface func,
       continue;
     result.push_back(attr);
   }
-}
-
-/// Add custom lowered funcOp to llvm.func attributes here.
-struct LoweredFuncAttrs {
-  LLVM::LLVMFuncOp::Properties properties;
-  NamedAttrList discardableAttrs;
-};
-
-/// Lower discardable function attributes on `func.func` to attributes expected
-/// by `llvm.func`.
-static FailureOr<LoweredFuncAttrs>
-lowerFuncAttributes(FunctionOpInterface func) {
-  MLIRContext *ctx = func->getContext();
-  LoweredFuncAttrs lowered;
-
-  llvm::SmallDenseSet<StringRef> odsAttrNames(
-      LLVM::LLVMFuncOp::getAttributeNames().begin(),
-      LLVM::LLVMFuncOp::getAttributeNames().end());
-
-  NamedAttrList inherentAttrs;
-
-  for (const NamedAttribute &attr : func->getDiscardableAttrs()) {
-    StringRef attrName = attr.getName().strref();
-
-    if (odsAttrNames.contains(attrName)) {
-      LDBG() << "LLVM specific attributes: " << attrName
-             << "should use llvm.* prefix, discarding it";
-      continue;
-    }
-
-    StringRef inherent = attrName;
-    if (inherent.consume_front("llvm.") && odsAttrNames.contains(inherent))
-      inherentAttrs.set(inherent, attr.getValue()); // collect inherent attrs
-    else
-      lowered.discardableAttrs.push_back(attr);
-  }
-
-  // Convert collected inherent attrs into typed properties.
-  if (!inherentAttrs.empty()) {
-    DictionaryAttr dict = inherentAttrs.getDictionary(ctx);
-    auto emitError = [&] {
-      return func.emitOpError("invalid llvm.func property");
-    };
-    if (failed(LLVM::LLVMFuncOp::setPropertiesFromAttr(lowered.properties, dict,
-                                                       emitError))) {
-      return failure();
-    }
-  }
-  return lowered;
-}
-
-static void buildLLVMFuncProperties(PatternRewriter &rewriter,
-                                    FunctionOpInterface srcFunc,
-                                    Type llvmFuncType,
-                                    LLVM::LLVMFuncOp::Properties &props) {
-  MLIRContext *ctx = rewriter.getContext();
-  props.sym_name = rewriter.getStringAttr(srcFunc.getName());
-  props.function_type = TypeAttr::get(llvmFuncType);
-  props.setCConv(LLVM::CConvAttr::get(ctx, LLVM::CConv::C));
 }
 
 /// Propagate argument/results attributes.
@@ -376,7 +318,8 @@ static LLVM::LLVMFuncOp createLLVMFuncOp(FunctionOpInterface funcOp,
     SymbolTable &symbolTable = symbolTables->getSymbolTable(symbolTableOp);
     symbolTable.remove(funcOp);
   }
-  buildLLVMFuncProperties(rewriter, funcOp, llvmType, loweredAttrs.properties);
+  loweredAttrs->properties.setCConv(
+      LLVM::CConvAttr::get(rewriter.getContext(), LLVM::CConv::C));
   auto newFuncOp = LLVM::LLVMFuncOp::create(rewriter, funcOp.getLoc(),
                                             loweredAttrs.properties,
                                             loweredAttrs.discardableAttrs);
