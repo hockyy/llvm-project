@@ -16,7 +16,6 @@
 
 #include "mlir/Interfaces/InferIntRangeInterface.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/BitmaskEnum.h"
 #include <optional>
 
 namespace mlir {
@@ -39,12 +38,7 @@ static constexpr unsigned indexMaxWidth = 64;
 
 enum class CmpMode : uint32_t { Both, Signed, Unsigned };
 
-enum class OverflowFlags : uint32_t {
-  None = 0,
-  Nsw = 1,
-  Nuw = 2,
-  LLVM_MARK_AS_BITMASK_ENUM(Nuw)
-};
+using OverflowFlags = mlir::OverflowFlags;
 
 /// Function that performs inference on an array of `ConstantIntRanges` while
 /// taking special overflow behavior into account.

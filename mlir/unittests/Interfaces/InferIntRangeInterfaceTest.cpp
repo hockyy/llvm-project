@@ -8,6 +8,7 @@
 
 #include "mlir/Interfaces/InferIntRangeInterface.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/Support/raw_ostream.h"
 #include <limits>
 
 #include <gtest/gtest.h>
@@ -96,4 +97,62 @@ TEST(IntRangeAttrs, Join) {
   ConstantIntRanges zeroOneUnsignedOnly(zero, one, intMin, intMax);
   ConstantIntRanges zeroOneSignedOnly(zero, uintMax, zero, one);
   EXPECT_EQ(zeroOneUnsignedOnly.rangeUnion(zeroOneSignedOnly), maximal);
+}
+
+TEST(IntRangeAttrs, OverflowFlags) {
+  APInt zero = APInt::getZero(64);
+  APInt one = zero + 1;
+  APInt two = zero + 2;
+
+  ConstantIntRanges nswOnly(zero, one, zero, one, OverflowFlags::Nsw);
+  ConstantIntRanges nuwOnly(one, two, one, two, OverflowFlags::Nuw);
+
+  EXPECT_NE(nswOnly.getOverflowFlags() & OverflowFlags::Nsw,
+            OverflowFlags::None);
+  EXPECT_EQ(nswOnly.getOverflowFlags() & OverflowFlags::Nuw,
+            OverflowFlags::None);
+
+  ConstantIntRanges both =
+      nswOnly.withOverflowFlags(OverflowFlags::Nsw | OverflowFlags::Nuw);
+  EXPECT_NE(both.getOverflowFlags() & OverflowFlags::Nsw, OverflowFlags::None);
+  EXPECT_NE(both.getOverflowFlags() & OverflowFlags::Nuw, OverflowFlags::None);
+
+  // rangeUnion conservatively preserves only proofs present in both inputs.
+  EXPECT_EQ(nswOnly.rangeUnion(nuwOnly).getOverflowFlags(),
+            OverflowFlags::None);
+  EXPECT_EQ(both.rangeUnion(nswOnly).getOverflowFlags(), OverflowFlags::Nsw);
+
+  // intersection preserves proofs from either input.
+  EXPECT_EQ(nswOnly.intersection(nuwOnly).getOverflowFlags(),
+            OverflowFlags::Nsw | OverflowFlags::Nuw);
+  EXPECT_EQ(both.intersection(nswOnly).getOverflowFlags(),
+            OverflowFlags::Nsw | OverflowFlags::Nuw);
+  ConstantIntRanges none(zero, two, zero, two, OverflowFlags::None);
+  EXPECT_EQ(nswOnly.intersection(none).getOverflowFlags(), OverflowFlags::Nsw);
+}
+
+TEST(IntRangeAttrs, OverflowFlagsPrinting) {
+  APInt zero = APInt::getZero(64);
+  APInt one = zero + 1;
+
+  auto toString = [](const ConstantIntRanges &r) {
+    std::string buf;
+    llvm::raw_string_ostream os(buf);
+    os << r;
+    return buf;
+  };
+
+  ConstantIntRanges noFlags(zero, one, zero, one);
+  EXPECT_EQ(toString(noFlags), "unsigned : [0, 1] signed : [0, 1]");
+
+  ConstantIntRanges nsw(zero, one, zero, one, OverflowFlags::Nsw);
+  EXPECT_EQ(toString(nsw), "unsigned : [0, 1] signed : [0, 1] overflow<nsw>");
+
+  ConstantIntRanges nuw(zero, one, zero, one, OverflowFlags::Nuw);
+  EXPECT_EQ(toString(nuw), "unsigned : [0, 1] signed : [0, 1] overflow<nuw>");
+
+  ConstantIntRanges both(zero, one, zero, one,
+                         OverflowFlags::Nsw | OverflowFlags::Nuw);
+  EXPECT_EQ(toString(both),
+            "unsigned : [0, 1] signed : [0, 1] overflow<nsw, nuw>");
 }

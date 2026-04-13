@@ -15,9 +15,18 @@
 #define MLIR_INTERFACES_INFERINTRANGEINTERFACE_H
 
 #include "mlir/IR/OpDefinition.h"
+#include "llvm/ADT/BitmaskEnum.h"
 #include <optional>
 
 namespace mlir {
+enum class OverflowFlags : uint32_t {
+  None = 0,
+  Nsw = 1,
+  Nuw = 2,
+  LLVM_MARK_AS_BITMASK_ENUM(Nuw)
+};
+LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
+
 /// A set of arbitrary-precision integers representing bounds on a given integer
 /// value. These bounds are inclusive on both ends, so
 /// bounds of [4, 5] mean 4 <= x <= 5. Separate bounds are tracked for
@@ -29,8 +38,10 @@ public:
   /// Bound umin <= (unsigned)x <= umax and smin <= signed(x) <= smax.
   /// Non-integer values should be bounded by APInts of bitwidth 0.
   ConstantIntRanges(const APInt &umin, const APInt &umax, const APInt &smin,
-                    const APInt &smax)
-      : uminVal(umin), umaxVal(umax), sminVal(smin), smaxVal(smax) {
+                    const APInt &smax,
+                    OverflowFlags overflowFlags = OverflowFlags::None)
+      : uminVal(umin), umaxVal(umax), sminVal(smin), smaxVal(smax),
+        overflowFlags(overflowFlags) {
     assert(uminVal.getBitWidth() == umaxVal.getBitWidth() &&
            umaxVal.getBitWidth() == sminVal.getBitWidth() &&
            sminVal.getBitWidth() == smaxVal.getBitWidth() &&
@@ -96,11 +107,21 @@ public:
   /// value.
   std::optional<APInt> getConstantValue() const;
 
+  /// Return overflow properties proven for the operation computing the bounded
+  /// value.
+  OverflowFlags getOverflowFlags() const { return overflowFlags; }
+
+  /// Return this range with updated overflow properties.
+  ConstantIntRanges withOverflowFlags(OverflowFlags flags) const {
+    return {uminVal, umaxVal, sminVal, smaxVal, flags};
+  }
+
   friend raw_ostream &operator<<(raw_ostream &os,
                                  const ConstantIntRanges &range);
 
 private:
   APInt uminVal, umaxVal, sminVal, smaxVal;
+  OverflowFlags overflowFlags = OverflowFlags::None;
 };
 
 raw_ostream &operator<<(raw_ostream &, const ConstantIntRanges &);

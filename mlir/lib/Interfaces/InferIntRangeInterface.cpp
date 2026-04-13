@@ -17,7 +17,8 @@ using namespace mlir;
 bool ConstantIntRanges::operator==(const ConstantIntRanges &other) const {
   return umin().getBitWidth() == other.umin().getBitWidth() &&
          umin() == other.umin() && umax() == other.umax() &&
-         smin() == other.smin() && smax() == other.smax();
+         smin() == other.smin() && smax() == other.smax() &&
+         getOverflowFlags() == other.getOverflowFlags();
 }
 
 const APInt &ConstantIntRanges::umin() const { return uminVal; }
@@ -94,8 +95,10 @@ ConstantIntRanges::rangeUnion(const ConstantIntRanges &other) const {
   const APInt &umaxUnion = umax().ugt(other.umax()) ? umax() : other.umax();
   const APInt &sminUnion = smin().slt(other.smin()) ? smin() : other.smin();
   const APInt &smaxUnion = smax().sgt(other.smax()) ? smax() : other.smax();
+  // For a union, keep only guarantees proven on both inputs.
+  OverflowFlags overflowUnion = getOverflowFlags() & other.getOverflowFlags();
 
-  return {uminUnion, umaxUnion, sminUnion, smaxUnion};
+  return {uminUnion, umaxUnion, sminUnion, smaxUnion, overflowUnion};
 }
 
 ConstantIntRanges
@@ -111,8 +114,12 @@ ConstantIntRanges::intersection(const ConstantIntRanges &other) const {
   const APInt &umaxIntersect = umax().ult(other.umax()) ? umax() : other.umax();
   const APInt &sminIntersect = smin().sgt(other.smin()) ? smin() : other.smin();
   const APInt &smaxIntersect = smax().slt(other.smax()) ? smax() : other.smax();
+  // For an intersection, guarantees from either input remain valid.
+  OverflowFlags overflowIntersect =
+      getOverflowFlags() | other.getOverflowFlags();
 
-  return {uminIntersect, umaxIntersect, sminIntersect, smaxIntersect};
+  return {uminIntersect, umaxIntersect, sminIntersect, smaxIntersect,
+          overflowIntersect};
 }
 
 std::optional<APInt> ConstantIntRanges::getConstantValue() const {
@@ -129,7 +136,23 @@ raw_ostream &mlir::operator<<(raw_ostream &os, const ConstantIntRanges &range) {
   range.umin().print(os, /*isSigned*/ false);
   os << ", ";
   range.umax().print(os, /*isSigned*/ false);
-  return os << "] signed : [" << range.smin() << ", " << range.smax() << "]";
+  os << "] signed : [" << range.smin() << ", " << range.smax() << "]";
+  OverflowFlags overflowFlags = range.getOverflowFlags();
+  if (overflowFlags == OverflowFlags::None)
+    return os;
+
+  os << " overflow<";
+  bool emitted = false;
+  if ((overflowFlags & OverflowFlags::Nsw) != OverflowFlags::None) {
+    os << "nsw";
+    emitted = true;
+  }
+  if ((overflowFlags & OverflowFlags::Nuw) != OverflowFlags::None) {
+    if (emitted)
+      os << ", ";
+    os << "nuw";
+  }
+  return os << ">";
 }
 
 IntegerValueRange IntegerValueRange::getMaxRange(Value value) {
