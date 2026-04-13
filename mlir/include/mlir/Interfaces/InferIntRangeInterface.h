@@ -50,6 +50,10 @@ public:
 
   bool operator==(const ConstantIntRanges &other) const;
 
+  /// Returns true if all signed and unsigned bounds match, ignoring
+  /// overflow flags.
+  bool hasSameBounds(const ConstantIntRanges &other) const;
+
   /// The minimum value of an integer when it is interpreted as unsigned.
   const APInt &umin() const;
 

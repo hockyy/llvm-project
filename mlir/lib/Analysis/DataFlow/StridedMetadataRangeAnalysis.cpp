@@ -104,10 +104,10 @@ LogicalResult StridedMetadataRangeAnalysis::visitOperation(
   };
 
   // Convert the arguments lattices to a vector.
-  SmallVector<StridedMetadataRange> argRanges = llvm::map_to_vector(
-      operands, [](const StridedMetadataRangeLattice *lattice) {
-        return lattice->getValue();
-      });
+  SmallVector<StridedMetadataRange, 2> argRanges;
+  argRanges.reserve(operands.size());
+  for (const StridedMetadataRangeLattice *lattice : operands)
+    argRanges.push_back(lattice->getValue());
 
   // Callback to set metadata on a result.
   auto joinCallback = [&](Value v, const StridedMetadataRange &md) {

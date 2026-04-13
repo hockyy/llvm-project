@@ -100,7 +100,9 @@ mlir::intrange::inferIndexOp(const InferRangeFn &inferFn,
   bool truncEqual = false;
   switch (mode) {
   case intrange::CmpMode::Both:
-    truncEqual = (thirtyTwo == sixtyFourAsThirtyTwo);
+    // Overflow flags are auxiliary guarantees and should not decide whether
+    // the 64-bit result is a truncation-compatible match.
+    truncEqual = thirtyTwo.hasSameBounds(sixtyFourAsThirtyTwo);
     break;
   case intrange::CmpMode::Signed:
     truncEqual = (thirtyTwo.smin() == sixtyFourAsThirtyTwo.smin() &&

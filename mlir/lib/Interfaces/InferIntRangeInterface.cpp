@@ -15,10 +15,13 @@
 using namespace mlir;
 
 bool ConstantIntRanges::operator==(const ConstantIntRanges &other) const {
+  return hasSameBounds(other) && getOverflowFlags() == other.getOverflowFlags();
+}
+
+bool ConstantIntRanges::hasSameBounds(const ConstantIntRanges &other) const {
   return umin().getBitWidth() == other.umin().getBitWidth() &&
          umin() == other.umin() && umax() == other.umax() &&
-         smin() == other.smin() && smax() == other.smax() &&
-         getOverflowFlags() == other.getOverflowFlags();
+         smin() == other.smin() && smax() == other.smax();
 }
 
 const APInt &ConstantIntRanges::umin() const { return uminVal; }
