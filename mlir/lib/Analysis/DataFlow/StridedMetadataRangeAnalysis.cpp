@@ -27,6 +27,18 @@
 using namespace mlir;
 using namespace mlir::dataflow;
 
+static ConstantIntRanges makeStaticIndexConstantRange(int32_t indexBitwidth,
+                                                      int64_t value) {
+  ConstantIntRanges range =
+      ConstantIntRanges::constant(APInt(indexBitwidth, value));
+  // For statically-known non-negative metadata constants (e.g. extents), we
+  // can safely carry both no-wrap guarantees.
+  if (range.smin().isNonNegative())
+    return range.withOverflowFlags(intrange::OverflowFlags::Nsw |
+                                   intrange::OverflowFlags::Nuw);
+  return range;
+}
+
 /// Get the entry state for a value. For any value that is not a ranked memref,
 /// this function sets the metadata to a top state with no offsets, sizes, or
 /// strides. For `memref` types, this function will use the metadata in the type
@@ -52,19 +64,19 @@ static StridedMetadataRange getEntryStateImpl(Value v, int32_t indexBitwidth) {
   // Refine the metadata if we know it from the type.
   if (!ShapedType::isDynamic(offset)) {
     metadata.getOffsets()[0] =
-        ConstantIntRanges::constant(APInt(indexBitwidth, offset));
+        makeStaticIndexConstantRange(indexBitwidth, offset);
   }
   for (auto &&[size, range] :
        llvm::zip_equal(mTy.getShape(), metadata.getSizes())) {
     if (ShapedType::isDynamic(size))
       continue;
-    range = ConstantIntRanges::constant(APInt(indexBitwidth, size));
+    range = makeStaticIndexConstantRange(indexBitwidth, size);
   }
   for (auto &&[stride, range] :
        llvm::zip_equal(strides, metadata.getStrides())) {
     if (ShapedType::isDynamic(stride))
       continue;
-    range = ConstantIntRanges::constant(APInt(indexBitwidth, stride));
+    range = makeStaticIndexConstantRange(indexBitwidth, stride);
   }
 
   return metadata;

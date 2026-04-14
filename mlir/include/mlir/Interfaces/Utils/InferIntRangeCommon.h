@@ -38,8 +38,6 @@ static constexpr unsigned indexMaxWidth = 64;
 
 enum class CmpMode : uint32_t { Both, Signed, Unsigned };
 
-using OverflowFlags = mlir::OverflowFlags;
-
 /// Function that performs inference on an array of `ConstantIntRanges` while
 /// taking special overflow behavior into account.
 using InferRangeWithOvfFlagsFn =
@@ -74,14 +72,56 @@ ConstantIntRanges extSIRange(const ConstantIntRanges &range,
 ConstantIntRanges truncRange(const ConstantIntRanges &range,
                              unsigned destWidth);
 
+/// Infer only the output bounds for integer add. This does not attach overflow
+/// proof metadata to the returned range; callers that want that metadata should
+/// also call `inferOverflowFlagsForAdd` and attach the result explicitly.
 ConstantIntRanges inferAdd(ArrayRef<ConstantIntRanges> argRanges,
                            OverflowFlags ovfFlags = OverflowFlags::None);
 
+OverflowFlags
+inferOverflowFlagsForAdd(ArrayRef<ConstantIntRanges> argRanges,
+                         OverflowFlags declaredFlags = OverflowFlags::None);
+
+/// Infer output bounds and attach inferred overflow flags for integer add.
+/// This is equivalent to calling `inferAdd` and then attaching the result of
+/// `inferOverflowFlagsForAdd` with the same `declaredFlags`.
+ConstantIntRanges
+inferAddWithOverflowFlags(ArrayRef<ConstantIntRanges> argRanges,
+                          OverflowFlags declaredFlags = OverflowFlags::None);
+
+/// Infer only the output bounds for integer sub. This does not attach overflow
+/// proof metadata to the returned range; callers that want that metadata should
+/// also call `inferOverflowFlagsForSub` and attach the result explicitly.
 ConstantIntRanges inferSub(ArrayRef<ConstantIntRanges> argRanges,
                            OverflowFlags ovfFlags = OverflowFlags::None);
 
+OverflowFlags
+inferOverflowFlagsForSub(ArrayRef<ConstantIntRanges> argRanges,
+                         OverflowFlags declaredFlags = OverflowFlags::None);
+
+/// Infer output bounds and attach inferred overflow flags for integer sub.
+/// This is equivalent to calling `inferSub` and then attaching the result of
+/// `inferOverflowFlagsForSub` with the same `declaredFlags`.
+ConstantIntRanges
+inferSubWithOverflowFlags(ArrayRef<ConstantIntRanges> argRanges,
+                          OverflowFlags declaredFlags = OverflowFlags::None);
+
+/// Infer only the output bounds for integer mul. This does not attach overflow
+/// proof metadata to the returned range; callers that want that metadata should
+/// also call `inferOverflowFlagsForMul` and attach the result explicitly.
 ConstantIntRanges inferMul(ArrayRef<ConstantIntRanges> argRanges,
                            OverflowFlags ovfFlags = OverflowFlags::None);
+
+OverflowFlags
+inferOverflowFlagsForMul(ArrayRef<ConstantIntRanges> argRanges,
+                         OverflowFlags declaredFlags = OverflowFlags::None);
+
+/// Infer output bounds and attach inferred overflow flags for integer mul.
+/// This is equivalent to calling `inferMul` and then attaching the result of
+/// `inferOverflowFlagsForMul` with the same `declaredFlags`.
+ConstantIntRanges
+inferMulWithOverflowFlags(ArrayRef<ConstantIntRanges> argRanges,
+                          OverflowFlags declaredFlags = OverflowFlags::None);
 
 ConstantIntRanges inferDivS(ArrayRef<ConstantIntRanges> argRanges);
 

@@ -19,6 +19,8 @@
 #include <optional>
 
 namespace mlir {
+
+namespace intrange {
 enum class OverflowFlags : uint32_t {
   None = 0,
   Nsw = 1,
@@ -26,6 +28,7 @@ enum class OverflowFlags : uint32_t {
   LLVM_MARK_AS_BITMASK_ENUM(Nuw)
 };
 LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
+} // end namespace intrange
 
 /// A set of arbitrary-precision integers representing bounds on a given integer
 /// value. These bounds are inclusive on both ends, so
@@ -35,8 +38,12 @@ LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
 /// unsigned semantics.
 class ConstantIntRanges {
 public:
+  using OverflowFlags = intrange::OverflowFlags;
+
   /// Bound umin <= (unsigned)x <= umax and smin <= signed(x) <= smax.
   /// Non-integer values should be bounded by APInts of bitwidth 0.
+  /// Overflow flags default to `none` and should be attached only when the
+  /// producer operation has proven no-wrap semantics for the represented value.
   ConstantIntRanges(const APInt &umin, const APInt &umax, const APInt &smin,
                     const APInt &smax,
                     OverflowFlags overflowFlags = OverflowFlags::None)
@@ -91,11 +98,13 @@ public:
   /// to `smin` and `smax`, where the unsigned bounds are constructed from the
   /// signed ones if they correspond to a contigious range of bit patterns when
   /// viewed as unsigned values and are left at [0, int_max()] otherwise.
+  /// This helper only constructs bounds; it does not infer overflow flags.
   static ConstantIntRanges fromSigned(const APInt &smin, const APInt &smax);
 
   /// Create an `ConstantIntRanges` with the unsigned minimum and maximum equal
   /// to `umin` and `umax` and the signed part equal to `umin` and `umax`
   /// unless the sign bit changes between the minimum and maximum.
+  /// This helper only constructs bounds; it does not infer overflow flags.
   static ConstantIntRanges fromUnsigned(const APInt &umin, const APInt &umax);
 
   /// Returns the union (computed separately for signed and unsigned bounds)
@@ -116,6 +125,8 @@ public:
   OverflowFlags getOverflowFlags() const { return overflowFlags; }
 
   /// Return this range with updated overflow properties.
+  /// Prefer setting flags at op-specific inference sites (where no-wrap is
+  /// proven) instead of in generic range constructors.
   ConstantIntRanges withOverflowFlags(OverflowFlags flags) const {
     return {uminVal, umaxVal, sminVal, smaxVal, flags};
   }

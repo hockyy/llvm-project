@@ -24,8 +24,16 @@ static constexpr uint64_t kMaxSubgroupSize = 128;
 
 static ConstantIntRanges getIndexRange(uint64_t umin, uint64_t umax) {
   unsigned width = IndexType::kInternalStorageBitWidth;
-  return ConstantIntRanges::fromUnsigned(APInt(width, umin),
-                                         APInt(width, umax));
+  ConstantIntRanges range =
+      ConstantIntRanges::fromUnsigned(APInt(width, umin), APInt(width, umax));
+
+  // Attach no-wrap guarantees only when the signed interpretation is also
+  // non-negative. GPU ids/dims are semantically non-negative; this check keeps
+  // us conservative for ranges whose unsigned upper bound crosses the sign bit.
+  if (range.smin().isNonNegative())
+    return range.withOverflowFlags(intrange::OverflowFlags::Nsw |
+                                   intrange::OverflowFlags::Nuw);
+  return range;
 }
 
 static uint64_t zext(uint32_t arg) { return static_cast<uint64_t>(arg); }

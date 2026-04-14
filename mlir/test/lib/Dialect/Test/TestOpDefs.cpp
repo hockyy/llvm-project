@@ -920,7 +920,10 @@ LogicalResult TestWithBoundsOp::verify() {
 
 void TestWithBoundsOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
                                          SetIntRangeFn setResultRanges) {
-  setResultRanges(getResult(), {getUmin(), getUmax(), getSmin(), getSmax()});
+  setResultRanges(getResult(),
+                  ConstantIntRanges(getUmin(), getUmax(), getSmin(), getSmax())
+                      .withOverflowFlags(intrange::OverflowFlags::Nsw |
+                                         intrange::OverflowFlags::Nuw));
 }
 
 //===----------------------------------------------------------------------===//
@@ -964,7 +967,10 @@ void TestWithBoundsRegionOp::print(OpAsmPrinter &p) {
 void TestWithBoundsRegionOp::inferResultRanges(
     ArrayRef<ConstantIntRanges> argRanges, SetIntRangeFn setResultRanges) {
   Value arg = getRegion().getArgument(0);
-  setResultRanges(arg, {getUmin(), getUmax(), getSmin(), getSmax()});
+  setResultRanges(arg,
+                  ConstantIntRanges(getUmin(), getUmax(), getSmin(), getSmax())
+                      .withOverflowFlags(intrange::OverflowFlags::Nsw |
+                                         intrange::OverflowFlags::Nuw));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1005,7 +1011,91 @@ void TestReflectBoundsOp::inferResultRanges(
   setUmaxAttr(b.getIntegerAttr(uIntTy, range.umax()));
   setSminAttr(b.getIntegerAttr(sIntTy, range.smin()));
   setSmaxAttr(b.getIntegerAttr(sIntTy, range.smax()));
+  setOverflowAttr(
+      b.getUI32IntegerAttr(static_cast<uint32_t>(range.getOverflowFlags())));
   setResultRanges(getResult(), range);
+}
+
+ParseResult TestReflectBoundsOp::parse(OpAsmParser &parser,
+                                       OperationState &result) {
+  OpAsmParser::UnresolvedOperand value;
+  Type type;
+  Builder &builder = parser.getBuilder();
+
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return failure();
+  if (parser.parseOperand(value))
+    return failure();
+
+  intrange::OverflowFlags flags = intrange::OverflowFlags::None;
+  if (succeeded(parser.parseOptionalKeyword("overflow"))) {
+    if (parser.parseLess())
+      return failure();
+
+    auto parseOverflowFlag = [&](bool allowNone) -> ParseResult {
+      if (succeeded(parser.parseOptionalKeyword("nsw"))) {
+        flags |= intrange::OverflowFlags::Nsw;
+        return success();
+      }
+      if (succeeded(parser.parseOptionalKeyword("nuw"))) {
+        flags |= intrange::OverflowFlags::Nuw;
+        return success();
+      }
+      if (allowNone && succeeded(parser.parseOptionalKeyword("none")))
+        return success();
+      return parser.emitError(parser.getCurrentLocation())
+             << "expected overflow flag 'none', 'nsw', or 'nuw'";
+    };
+
+    if (failed(parseOverflowFlag(/*allowNone=*/true)))
+      return failure();
+
+    while (flags != intrange::OverflowFlags::None &&
+           succeeded(parser.parseOptionalComma())) {
+      if (failed(parseOverflowFlag(/*allowNone=*/false)))
+        return failure();
+    }
+
+    if (parser.parseGreater())
+      return failure();
+    result.addAttribute(
+        TestReflectBoundsOp::getOverflowAttrName(result.name),
+        builder.getUI32IntegerAttr(static_cast<uint32_t>(flags)));
+  }
+
+  if (parser.parseColonType(type))
+    return failure();
+  if (parser.resolveOperand(value, type, result.operands))
+    return failure();
+  result.addTypes(type);
+  return success();
+}
+
+void TestReflectBoundsOp::print(OpAsmPrinter &p) {
+  p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"overflow"});
+  intrange::OverflowFlags flags = intrange::OverflowFlags::None;
+  if (auto overflowAttr = getOverflowAttr())
+    flags = static_cast<intrange::OverflowFlags>(
+        overflowAttr.getValue().getZExtValue());
+  p << " overflow<";
+  bool emitted = false;
+  auto emitOverflowFlag = [&](intrange::OverflowFlags flag,
+                              StringLiteral keyword) {
+    if ((flags & flag) == intrange::OverflowFlags::None)
+      return;
+    if (emitted)
+      p << ", ";
+    p << keyword;
+    emitted = true;
+  };
+  emitOverflowFlag(intrange::OverflowFlags::Nsw, "nsw");
+  emitOverflowFlag(intrange::OverflowFlags::Nuw, "nuw");
+  if (!emitted)
+    p << "none";
+  p << '>';
+
+  p << ' ' << getValue();
+  p << " : " << getType();
 }
 
 //===----------------------------------------------------------------------===//

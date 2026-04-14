@@ -3347,7 +3347,7 @@ def TestReflectBoundsOp : TEST_Op<"reflect_bounds",
     Example:
 
     ```mlir
-    CHECK: test.reflect_bounds {smax = 7 : index, smin = 0 : index, umax = 7 : index, umin = 0 : index}
+    CHECK: test.reflect_bounds {smax = 7 : index, smin = 0 : index, umax = 7 : index, umin = 0 : index} overflow<none>
     %1 = test.reflect_bounds %0 : index
     ```
   }];
@@ -3356,10 +3356,11 @@ def TestReflectBoundsOp : TEST_Op<"reflect_bounds",
                        OptionalAttr<APIntAttr>:$umin,
                        OptionalAttr<APIntAttr>:$umax,
                        OptionalAttr<APIntAttr>:$smin,
-                       OptionalAttr<APIntAttr>:$smax);
+                       OptionalAttr<APIntAttr>:$smax,
+                       OptionalAttr<UI32Attr>:$overflow);
   let results = (outs InferIntRangeType:$result);
 
-  let assemblyFormat = "attr-dict $value `:` type($result)";
+  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//

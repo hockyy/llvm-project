@@ -13,6 +13,7 @@
 #include <optional>
 
 using namespace mlir;
+using mlir::intrange::OverflowFlags;
 
 bool ConstantIntRanges::operator==(const ConstantIntRanges &other) const {
   return hasSameBounds(other) && getOverflowFlags() == other.getOverflowFlags();
@@ -118,8 +119,7 @@ ConstantIntRanges::intersection(const ConstantIntRanges &other) const {
   const APInt &sminIntersect = smin().sgt(other.smin()) ? smin() : other.smin();
   const APInt &smaxIntersect = smax().slt(other.smax()) ? smax() : other.smax();
   // For an intersection, guarantees from either input remain valid.
-  OverflowFlags overflowIntersect =
-      getOverflowFlags() | other.getOverflowFlags();
+  auto overflowIntersect = getOverflowFlags() | other.getOverflowFlags();
 
   return {uminIntersect, umaxIntersect, sminIntersect, smaxIntersect,
           overflowIntersect};
@@ -140,7 +140,7 @@ raw_ostream &mlir::operator<<(raw_ostream &os, const ConstantIntRanges &range) {
   os << ", ";
   range.umax().print(os, /*isSigned*/ false);
   os << "] signed : [" << range.smin() << ", " << range.smax() << "]";
-  OverflowFlags overflowFlags = range.getOverflowFlags();
+  auto overflowFlags = range.getOverflowFlags();
   if (overflowFlags == OverflowFlags::None)
     return os;
 

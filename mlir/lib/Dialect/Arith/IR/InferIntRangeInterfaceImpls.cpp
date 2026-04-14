@@ -11,7 +11,6 @@
 #include "mlir/Interfaces/Utils/InferIntRangeCommon.h"
 
 #include <optional>
-#include <utility>
 
 #define DEBUG_TYPE "int-range-analysis"
 
@@ -27,116 +26,6 @@ convertArithOverflowFlags(arith::IntegerOverflowFlags flags) {
   if (bitEnumContainsAny(flags, arith::IntegerOverflowFlags::nuw))
     retFlags |= intrange::OverflowFlags::Nuw;
   return retFlags;
-}
-
-template <typename Op>
-static bool proveNoOverflow(const APInt &lhs, const APInt &rhs, Op op) {
-  bool overflow = false;
-  (void)op(lhs, rhs, overflow);
-  return !overflow;
-}
-
-template <typename Op>
-static bool
-proveNoOverflowForPairs(ArrayRef<std::pair<const APInt *, const APInt *>> pairs,
-                        Op op) {
-  for (const auto &[lhs, rhs] : pairs) {
-    if (!proveNoOverflow(*lhs, *rhs, op))
-      return false;
-  }
-  return true;
-}
-
-static OverflowFlags proveNoOverflowFlags(
-    ArrayRef<ConstantIntRanges> args,
-    function_ref<bool(ArrayRef<ConstantIntRanges>)> proveSigned,
-    function_ref<bool(ArrayRef<ConstantIntRanges>)> proveUnsigned) {
-  OverflowFlags flags = OverflowFlags::None;
-  if (proveSigned(args))
-    flags |= OverflowFlags::Nsw;
-  if (proveUnsigned(args))
-    flags |= OverflowFlags::Nuw;
-  return flags;
-}
-
-static bool proveNoSignedAddOverflow(ArrayRef<ConstantIntRanges> argRanges) {
-  const APInt &lhsMin = argRanges[0].smin();
-  const APInt &lhsMax = argRanges[0].smax();
-  const APInt &rhsMin = argRanges[1].smin();
-  const APInt &rhsMax = argRanges[1].smax();
-  // Signed add is monotone in both operands, so it is enough to check
-  // the interval endpoints to prove no signed wrap for the whole range.
-  return proveNoOverflowForPairs(
-      {{&lhsMin, &rhsMin}, {&lhsMax, &rhsMax}},
-      [](const APInt &lhs, const APInt &rhs, bool &overflow) {
-        return lhs.sadd_ov(rhs, overflow);
-      });
-}
-
-static bool proveNoUnsignedAddOverflow(ArrayRef<ConstantIntRanges> argRanges) {
-  return proveNoOverflow(
-      argRanges[0].umax(), argRanges[1].umax(),
-      [](const APInt &lhs, const APInt &rhs, bool &overflow) {
-        return lhs.uadd_ov(rhs, overflow);
-      });
-}
-
-static bool proveNoSignedSubOverflow(ArrayRef<ConstantIntRanges> argRanges) {
-  const APInt &lhsMin = argRanges[0].smin();
-  const APInt &lhsMax = argRanges[0].smax();
-  const APInt &rhsMin = argRanges[1].smin();
-  const APInt &rhsMax = argRanges[1].smax();
-  // For lhs - rhs, the extrema occur at (lhsMin - rhsMax) and
-  // (lhsMax - rhsMin). If both are no-wrap, the full interval is no-wrap.
-  return proveNoOverflowForPairs(
-      {{&lhsMin, &rhsMax}, {&lhsMax, &rhsMin}},
-      [](const APInt &lhs, const APInt &rhs, bool &overflow) {
-        return lhs.ssub_ov(rhs, overflow);
-      });
-}
-
-static bool proveNoUnsignedSubOverflow(ArrayRef<ConstantIntRanges> argRanges) {
-  return argRanges[0].umin().uge(argRanges[1].umax());
-}
-
-static bool proveNoSignedMulOverflow(ArrayRef<ConstantIntRanges> argRanges) {
-  const APInt &lhsMin = argRanges[0].smin();
-  const APInt &lhsMax = argRanges[0].smax();
-  const APInt &rhsMin = argRanges[1].smin();
-  const APInt &rhsMax = argRanges[1].smax();
-  // Signed multiply is not monotone across sign changes, so conservatively
-  // require all four corner products to be no-wrap.
-  return proveNoOverflowForPairs(
-      {{&lhsMin, &rhsMin},
-       {&lhsMin, &rhsMax},
-       {&lhsMax, &rhsMin},
-       {&lhsMax, &rhsMax}},
-      [](const APInt &lhs, const APInt &rhs, bool &overflow) {
-        return lhs.smul_ov(rhs, overflow);
-      });
-}
-
-static bool proveNoUnsignedMulOverflow(ArrayRef<ConstantIntRanges> argRanges) {
-  return proveNoOverflow(
-      argRanges[0].umax(), argRanges[1].umax(),
-      [](const APInt &lhs, const APInt &rhs, bool &overflow) {
-        return lhs.umul_ov(rhs, overflow);
-      });
-}
-
-static OverflowFlags proveNoOverflowForAdd(ArrayRef<ConstantIntRanges> args) {
-  return proveNoOverflowFlags(args, proveNoSignedAddOverflow,
-                              proveNoUnsignedAddOverflow);
-}
-
-static OverflowFlags proveNoOverflowForSub(ArrayRef<ConstantIntRanges> args) {
-  return proveNoOverflowFlags(args, proveNoSignedSubOverflow,
-                              proveNoUnsignedSubOverflow);
-}
-
-static OverflowFlags proveNoOverflowForMul(ArrayRef<ConstantIntRanges> args) {
-  return proveNoOverflowFlags(args, proveNoSignedMulOverflow,
-                              proveNoUnsignedMulOverflow);
 }
 
 //===----------------------------------------------------------------------===//
@@ -177,10 +66,8 @@ void arith::ConstantOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
 void arith::AddIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
                                       SetIntRangeFn setResultRange) {
   OverflowFlags declaredFlags = convertArithOverflowFlags(getOverflowFlags());
-  ConstantIntRanges range = inferAdd(argRanges, declaredFlags);
-  OverflowFlags overflowFlags =
-      proveNoOverflowForAdd(argRanges) | declaredFlags;
-  setResultRange(getResult(), range.withOverflowFlags(overflowFlags));
+  setResultRange(getResult(),
+                 inferAddWithOverflowFlags(argRanges, declaredFlags));
 }
 
 //===----------------------------------------------------------------------===//
@@ -190,10 +77,8 @@ void arith::AddIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
 void arith::SubIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
                                       SetIntRangeFn setResultRange) {
   OverflowFlags declaredFlags = convertArithOverflowFlags(getOverflowFlags());
-  ConstantIntRanges range = inferSub(argRanges, declaredFlags);
-  OverflowFlags overflowFlags =
-      proveNoOverflowForSub(argRanges) | declaredFlags;
-  setResultRange(getResult(), range.withOverflowFlags(overflowFlags));
+  setResultRange(getResult(),
+                 inferSubWithOverflowFlags(argRanges, declaredFlags));
 }
 
 //===----------------------------------------------------------------------===//
@@ -203,10 +88,8 @@ void arith::SubIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
 void arith::MulIOp::inferResultRanges(ArrayRef<ConstantIntRanges> argRanges,
                                       SetIntRangeFn setResultRange) {
   OverflowFlags declaredFlags = convertArithOverflowFlags(getOverflowFlags());
-  ConstantIntRanges range = inferMul(argRanges, declaredFlags);
-  OverflowFlags overflowFlags =
-      proveNoOverflowForMul(argRanges) | declaredFlags;
-  setResultRange(getResult(), range.withOverflowFlags(overflowFlags));
+  setResultRange(getResult(),
+                 inferMulWithOverflowFlags(argRanges, declaredFlags));
 }
 
 //===----------------------------------------------------------------------===//

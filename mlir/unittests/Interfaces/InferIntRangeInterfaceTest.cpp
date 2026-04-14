@@ -20,6 +20,8 @@ using namespace mlir;
 
 namespace {
 
+using mlir::intrange::OverflowFlags;
+
 template <typename OpTy>
 ConstantIntRanges inferBinaryOpResult(OpTy op,
                                       ArrayRef<ConstantIntRanges> argRanges) {
