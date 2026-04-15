@@ -799,6 +799,44 @@ static llvm::EquivalenceClasses<Value> computeTiedSuccessorInputs(
   return tiedSuccessorInputs;
 }
 
+/// Successor input mappings are edge-local: when control flow paths are pruned
+/// by constants, some edge pairs may disappear and a pure edge-based tie
+/// relation can miss structural couplings between op results and region block
+/// arguments. For single-region region branch ops (e.g. `scf.for`), tie parent
+/// successor inputs and region successor inputs by slot so canonicalizations
+/// only erase such values together.
+static void tieRegionAndParentSuccessorInputs(
+    RegionBranchOpInterface regionBranchOp,
+    llvm::EquivalenceClasses<Value> &tiedSuccessorInputs) {
+  if (regionBranchOp->getNumRegions() != 1)
+    return;
+
+  ValueRange parentInputs =
+      regionBranchOp.getSuccessorInputs(RegionSuccessor::parent());
+  if (parentInputs.empty())
+    return;
+
+  SmallVector<ValueRange> regionInputs;
+  for (Region &region : regionBranchOp->getRegions()) {
+    ValueRange inputs =
+        regionBranchOp.getSuccessorInputs(RegionSuccessor(&region));
+    if (!inputs.empty())
+      regionInputs.push_back(inputs);
+  }
+  if (regionInputs.empty())
+    return;
+
+  for (ValueRange inputs : regionInputs) {
+    unsigned commonInputCount =
+        std::min<unsigned>(parentInputs.size(), inputs.size());
+    for (unsigned i = 0; i < commonInputCount; ++i) {
+      tiedSuccessorInputs.insert(parentInputs[i]);
+      tiedSuccessorInputs.insert(inputs[i]);
+      tiedSuccessorInputs.unionSets(parentInputs[i], inputs[i]);
+    }
+  }
+}
+
 /// Remove dead successor inputs from region branch ops. A successor input is
 /// dead if it has no uses. Successor inputs come in sets of tied values: if
 /// you remove one value from a set, you must remove all values from the set.
@@ -856,6 +894,7 @@ struct RemoveDeadRegionBranchOpSuccessorInputs : public RewritePattern {
     regionBranchOp.getSuccessorOperandInputMapping(operandToInputs);
     llvm::EquivalenceClasses<Value> tiedSuccessorInputs =
         computeTiedSuccessorInputs(operandToInputs);
+    tieRegionAndParentSuccessorInputs(regionBranchOp, tiedSuccessorInputs);
 
     // Determine which values to remove and group them by block and operation.
     SmallVector<Value> valuesToRemove;

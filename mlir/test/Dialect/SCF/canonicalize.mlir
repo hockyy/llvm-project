@@ -2360,3 +2360,24 @@ func.func @fold_tensor_cast_into_forall_non_sequential_writes(
   // %0#0 contains %arg1 data; %0#1 contains %arg0 data.
   return %0#0, %0#1 : tensor<?x32xf32>, tensor<?x32xf32>
 }
+
+// -----
+
+// CHECK-LABEL: func.func @single_iteration_loop_keeps_tied_inputs_valid
+func.func @single_iteration_loop_keeps_tied_inputs_valid() {
+  // CHECK: %[[LB:.*]] = arith.constant 42
+  %c42 = arith.constant 42 : index
+  %c43 = arith.constant 43 : index
+  %c1 = arith.constant 1 : index
+  // CHECK: %[[INIT:.*]] = "test.init"
+  %init = "test.init"() : () -> i32
+  // CHECK-NOT: scf.for
+  // CHECK: %[[VAL:.*]] = "test.op"(%[[LB]], %[[INIT]])
+  %0 = scf.for %i = %c42 to %c43 step %c1 iter_args(%arg = %init) -> (i32) {
+    %1 = "test.op"(%i, %init) : (index, i32) -> i32
+    scf.yield %1 : i32
+  }
+  // CHECK: "test.consume"(%[[VAL]]) : (i32) -> ()
+  "test.consume"(%0) : (i32) -> ()
+  return
+}
