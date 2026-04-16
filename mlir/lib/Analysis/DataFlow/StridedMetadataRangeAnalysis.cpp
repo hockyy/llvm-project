@@ -27,16 +27,24 @@
 using namespace mlir;
 using namespace mlir::dataflow;
 
-static ConstantIntRanges makeStaticIndexConstantRange(int32_t indexBitwidth,
-                                                      int64_t value) {
+enum class MetadataFieldSignedness { Signed, Unsigned };
+
+static ConstantIntRanges
+makeStaticIndexConstantRange(int32_t indexBitwidth, int64_t value,
+                             MetadataFieldSignedness signedness) {
   ConstantIntRanges range =
       ConstantIntRanges::constant(APInt(indexBitwidth, value));
-  // For statically-known non-negative metadata constants (e.g. extents), we
-  // can safely carry both no-wrap guarantees.
-  if (range.smin().isNonNegative())
-    return range.withOverflowFlags(intrange::OverflowFlags::Nsw |
-                                   intrange::OverflowFlags::Nuw);
-  return range;
+
+  intrange::OverflowFlags flags = signedness == MetadataFieldSignedness::Signed
+                                      ? intrange::OverflowFlags::Nsw
+                                      : intrange::OverflowFlags::Nuw;
+  // If the signed and unsigned views coincide, the opposite no-wrap guarantee
+  // is also valid.
+  if (range.umin() == range.smin() && range.umax() == range.smax())
+    flags |= signedness == MetadataFieldSignedness::Signed
+                 ? intrange::OverflowFlags::Nuw
+                 : intrange::OverflowFlags::Nsw;
+  return range.withOverflowFlags(flags);
 }
 
 /// Get the entry state for a value. For any value that is not a ranked memref,
@@ -63,20 +71,22 @@ static StridedMetadataRange getEntryStateImpl(Value v, int32_t indexBitwidth) {
 
   // Refine the metadata if we know it from the type.
   if (!ShapedType::isDynamic(offset)) {
-    metadata.getOffsets()[0] =
-        makeStaticIndexConstantRange(indexBitwidth, offset);
+    metadata.getOffsets()[0] = makeStaticIndexConstantRange(
+        indexBitwidth, offset, MetadataFieldSignedness::Signed);
   }
   for (auto &&[size, range] :
        llvm::zip_equal(mTy.getShape(), metadata.getSizes())) {
     if (ShapedType::isDynamic(size))
       continue;
-    range = makeStaticIndexConstantRange(indexBitwidth, size);
+    range = makeStaticIndexConstantRange(indexBitwidth, size,
+                                         MetadataFieldSignedness::Unsigned);
   }
   for (auto &&[stride, range] :
        llvm::zip_equal(strides, metadata.getStrides())) {
     if (ShapedType::isDynamic(stride))
       continue;
-    range = makeStaticIndexConstantRange(indexBitwidth, stride);
+    range = makeStaticIndexConstantRange(indexBitwidth, stride,
+                                         MetadataFieldSignedness::Signed);
   }
 
   return metadata;
@@ -115,11 +125,10 @@ LogicalResult StridedMetadataRangeAnalysis::visitOperation(
     return lattice ? lattice->getValue() : IntegerValueRange();
   };
 
-  // Convert the arguments lattices to a vector.
-  SmallVector<StridedMetadataRange, 2> argRanges;
-  argRanges.reserve(operands.size());
-  for (const StridedMetadataRangeLattice *lattice : operands)
-    argRanges.push_back(lattice->getValue());
+  auto argRanges = llvm::map_to_vector<2>(
+      operands, [](const StridedMetadataRangeLattice *lattice) {
+        return lattice->getValue();
+      });
 
   // Callback to set metadata on a result.
   auto joinCallback = [&](Value v, const StridedMetadataRange &md) {

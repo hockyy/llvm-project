@@ -3357,10 +3357,14 @@ def TestReflectBoundsOp : TEST_Op<"reflect_bounds",
                        OptionalAttr<APIntAttr>:$umax,
                        OptionalAttr<APIntAttr>:$smin,
                        OptionalAttr<APIntAttr>:$smax,
-                       OptionalAttr<UI32Attr>:$overflow);
+                       DefaultValuedAttr<UI32Attr, "0">:$overflow);
   let results = (outs InferIntRangeType:$result);
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = [{
+    attr-dict
+    custom<ReflectBoundsOverflow>($overflow)
+    $value `:` type($result)
+  }];
 }
 
 //===----------------------------------------------------------------------===//

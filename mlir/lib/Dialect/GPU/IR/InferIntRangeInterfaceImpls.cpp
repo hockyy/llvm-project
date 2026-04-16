@@ -27,13 +27,13 @@ static ConstantIntRanges getIndexRange(uint64_t umin, uint64_t umax) {
   ConstantIntRanges range =
       ConstantIntRanges::fromUnsigned(APInt(width, umin), APInt(width, umax));
 
-  // Attach no-wrap guarantees only when the signed interpretation is also
-  // non-negative. GPU ids/dims are semantically non-negative; this check keeps
-  // us conservative for ranges whose unsigned upper bound crosses the sign bit.
-  if (range.smin().isNonNegative())
-    return range.withOverflowFlags(intrange::OverflowFlags::Nsw |
-                                   intrange::OverflowFlags::Nuw);
-  return range;
+  // GPU ids/dims are semantically non-negative, so unsigned no-wrap always
+  // applies. Signed no-wrap only applies when signed and unsigned
+  // interpretations describe the same interval.
+  intrange::OverflowFlags flags = intrange::OverflowFlags::Nuw;
+  if (range.umin() == range.smin() && range.umax() == range.smax())
+    flags |= intrange::OverflowFlags::Nsw;
+  return range.withOverflowFlags(flags);
 }
 
 static uint64_t zext(uint32_t arg) { return static_cast<uint64_t>(arg); }
