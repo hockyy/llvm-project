@@ -1803,6 +1803,84 @@ Speculation::Speculatability ReduceOp::getSpeculatability() {
   return getGenericSpeculatabilityImpl(cast<LinalgOp>(getOperation()));
 }
 
+namespace {
+
+struct MergeConsecutiveReduceOp : OpRewritePattern<linalg::ReduceOp> {
+  using OpRewritePattern<linalg::ReduceOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(linalg::ReduceOp consumer,
+                                PatternRewriter &rewriter) const override {
+    if (consumer.getNumDpsInputs() != 1) {
+      return rewriter.notifyMatchFailure(
+          consumer, "Only supports second reduce op with one input");
+    }
+    Value input = consumer.getDpsInputs().front();
+    if (!input.hasOneUse()) {
+      return rewriter.notifyMatchFailure(
+          consumer, "Does not support producer result with multiple users");
+    }
+    auto producer = input.getDefiningOp<linalg::ReduceOp>();
+    if (!producer) {
+      return rewriter.notifyMatchFailure(consumer,
+                                         "Does not find consecutive reduces");
+    }
+    if (consumer.getOperation()->getBlock() !=
+        producer.getOperation()->getBlock()) {
+      return rewriter.notifyMatchFailure(
+          consumer, "Does not support reduce in different blocks");
+    }
+    if (!OperationEquivalence::isRegionEquivalentTo(
+            &consumer.getRegion(), &producer.getRegion(),
+            OperationEquivalence::Flags::IgnoreLocations)) {
+      return rewriter.notifyMatchFailure(
+          consumer, "Reduce operation regions is not equal");
+    }
+    SmallVector<unsigned> prodDims, consDims;
+    producer.getReductionDims(prodDims);
+    consumer.getReductionDims(consDims);
+    auto maxRank =
+        cast<ShapedType>(producer.getDpsInputs()[0].getType()).getRank();
+
+    auto dims = mergeConsecutiveReduceDims(prodDims, consDims, maxRank);
+    rewriter.setInsertionPointAfter(consumer);
+    auto newReduce = linalg::ReduceOp::create(
+        rewriter, consumer->getLoc(), TypeRange(consumer->getResults()),
+        producer.getInputs(), consumer.getInits(), dims);
+    Region &newRegion = newReduce.getRegion();
+    IRMapping mapping;
+    consumer.getRegion().cloneInto(&newRegion, newRegion.begin(), mapping);
+
+    rewriter.replaceOp(consumer, newReduce);
+    rewriter.eraseOp(producer);
+    return success();
+  }
+
+  /// Merge two reduce dims of consecutive reduce ops, return the merged dims
+  /// that work on the origin reduce input.
+  SmallVector<int64_t> mergeConsecutiveReduceDims(ArrayRef<unsigned> prodDims,
+                                                  ArrayRef<unsigned> consDims,
+                                                  unsigned maxRank) const {
+    BitVector availableMask(maxRank, true);
+    for (unsigned dim : prodDims)
+      availableMask[dim] = false;
+    SmallVector<unsigned> remainingDimIndex;
+    for (unsigned i = 0; i < maxRank; i++)
+      if (availableMask[i])
+        remainingDimIndex.push_back(i);
+    SmallVector<int64_t> newDims(prodDims);
+    for (unsigned dim : consDims)
+      newDims.push_back(remainingDimIndex[dim]);
+    llvm::sort(newDims.begin(), newDims.end());
+    return newDims;
+  }
+};
+
+} // namespace
+
+void ReduceOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                           MLIRContext *context) {
+  results.add<MergeConsecutiveReduceOp>(context);
+}
+
 static ParseResult parseDenseI64ArrayAttr(OpAsmParser &parser,
                                           NamedAttrList &attributes,
                                           StringRef attributeName) {

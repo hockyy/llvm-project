@@ -387,6 +387,7 @@ def ReduceOp : LinalgStructuredBase_Op<"reduce", [
     MutableOperandRange getDpsInitsMutable() { return getInitsMutable(); }
   }];
 
+  let hasCanonicalizer = 1;
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }
