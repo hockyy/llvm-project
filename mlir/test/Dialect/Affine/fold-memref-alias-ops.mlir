@@ -189,3 +189,19 @@ func.func @fold_static_stride_subview_with_affine_load_store_collapse_shape_with
 // CHECK-NEXT: affine.for %{{.*}} = 0 to 3 {
 // CHECK-NEXT:   affine.load %[[ARG0]][%[[ZERO]]] : memref<1xf32>
 
+// -----
+
+// Regression test for https://github.com/llvm/llvm-project/issues/205238:
+// folding must not assert when a delinearize result (possibly 0) is used as a
+// dynamic basis of a subsequent delinearize.
+// CHECK-LABEL: func @delinearize_zero_dynamic_basis_no_crash
+func.func @delinearize_zero_dynamic_basis_no_crash() {
+  %c16 = arith.constant 16 : index
+  %c224 = arith.constant 224 : index
+  %0:3 = affine.delinearize_index %c16 into (%c16, %c224, %c224) : index, index, index
+  %1:3 = affine.delinearize_index %c16 into (%c16, %0#0, %c224) : index, index, index
+  %2:3 = affine.delinearize_index %c16 into (%c16, %1#1, %c224) : index, index, index
+  return
+}
+// CHECK: return
+

@@ -5023,6 +5023,16 @@ foldCstValueToCstAttrBasis(ArrayRef<OpFoldResult> mixedBasis,
 LogicalResult
 AffineDelinearizeIndexOp::fold(FoldAdaptor adaptor,
                                SmallVectorImpl<OpFoldResult> &result) {
+  // A non-positive basis is invalid for delinearize. Bail out before mutating
+  // the op (foldCstValueToCstAttrBasis erases dynamic operands) or calling
+  // llvm::mod, which asserts on non-positive denominators. This can arise when
+  // a prior delinearize folds to 0 and that result is used as a dynamic basis.
+  for (OpFoldResult basis : getMixedBasis()) {
+    if (std::optional<int64_t> val = getConstantIntValue(basis);
+        val && *val <= 0)
+      return failure();
+  }
+
   std::optional<SmallVector<int64_t>> maybeStaticBasis =
       foldCstValueToCstAttrBasis(getMixedBasis(), getDynamicBasisMutable(),
                                  adaptor.getDynamicBasis());
@@ -5050,6 +5060,11 @@ AffineDelinearizeIndexOp::fold(FoldAdaptor adaptor,
   if (hasOuterBound())
     staticBasis = staticBasis.drop_front();
   for (int64_t modulus : llvm::reverse(staticBasis)) {
+    // Defense in depth: static basis may already be non-positive.
+    if (modulus <= 0) {
+      result.clear();
+      return failure();
+    }
     result.push_back(IntegerAttr::get(attrType, llvm::mod(highPart, modulus)));
     highPart = llvm::divideFloorSigned(highPart, modulus);
   }
