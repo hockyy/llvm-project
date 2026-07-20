@@ -69,9 +69,19 @@ static void specializeParallelLoopForUnrolling(ParallelOp op) {
     cond = cond ? arith::AndIOp::create(b, op.getLoc(), cond, cmp) : cmp;
     map.map(std::get<0>(bound), constant);
   }
-  auto ifOp = scf::IfOp::create(b, op.getLoc(), cond, /*withElseRegion=*/true);
-  ifOp.getThenBodyBuilder().clone(*op.getOperation(), map);
-  ifOp.getElseBodyBuilder().clone(*op.getOperation());
+  // Clone into an scf.if that yields the specialized loop results so loops
+  // with reductions (or other results) keep their uses valid.
+  auto ifOp = scf::IfOp::create(
+      b, op.getLoc(), cond,
+      [&](OpBuilder &builder, Location loc) {
+        Operation *thenLoop = builder.clone(*op.getOperation(), map);
+        scf::YieldOp::create(builder, loc, thenLoop->getResults());
+      },
+      [&](OpBuilder &builder, Location loc) {
+        Operation *elseLoop = builder.clone(*op.getOperation());
+        scf::YieldOp::create(builder, loc, elseLoop->getResults());
+      });
+  op.replaceAllUsesWith(ifOp.getResults());
   op.erase();
 }
 
@@ -100,9 +110,17 @@ static void specializeForLoopForUnrolling(ForOp op) {
   Value cond = arith::CmpIOp::create(b, op.getLoc(), arith::CmpIPredicate::eq,
                                      bound, constant);
   map.map(bound, constant);
-  auto ifOp = scf::IfOp::create(b, op.getLoc(), cond, /*withElseRegion=*/true);
-  ifOp.getThenBodyBuilder().clone(*op.getOperation(), map);
-  ifOp.getElseBodyBuilder().clone(*op.getOperation());
+  auto ifOp = scf::IfOp::create(
+      b, op.getLoc(), cond,
+      [&](OpBuilder &builder, Location loc) {
+        Operation *thenLoop = builder.clone(*op.getOperation(), map);
+        scf::YieldOp::create(builder, loc, thenLoop->getResults());
+      },
+      [&](OpBuilder &builder, Location loc) {
+        Operation *elseLoop = builder.clone(*op.getOperation());
+        scf::YieldOp::create(builder, loc, elseLoop->getResults());
+      });
+  op.replaceAllUsesWith(ifOp.getResults());
   op.erase();
 }
 

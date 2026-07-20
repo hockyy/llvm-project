@@ -44,3 +44,33 @@ func.func @parallel_loop(%outer_i0: index, %outer_i1: index, %A: memref<?x?xf32>
 // CHECK:           }
 // CHECK:           return
 // CHECK:         }
+
+// -----
+
+// Regression test for https://github.com/llvm/llvm-project/issues/205231:
+// specializing a reducing parallel loop must yield its results from scf.if.
+#map1 = affine_map<()[s0] -> (s0, 8)>
+// CHECK-LABEL: func @parallel_loop_with_reduce
+// CHECK:         scf.if %{{.*}} -> (f32) {
+// CHECK:           %[[THEN:.*]] = scf.parallel
+// CHECK:           scf.yield %[[THEN]] : f32
+// CHECK:         } else {
+// CHECK:           %[[ELSE:.*]] = scf.parallel
+// CHECK:           scf.yield %[[ELSE]] : f32
+// CHECK:         }
+func.func @parallel_loop_with_reduce() -> f32 {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %c10 = arith.constant 10 : index
+  %cst = arith.constant 0.000000e+00 : f32
+  %bound = affine.min #map1()[%c10]
+  %res = scf.parallel (%arg0) = (%c0) to (%bound) step (%c1) init (%cst) -> f32 {
+    %val = arith.addf %cst, %cst : f32
+    scf.reduce(%val : f32) {
+    ^bb0(%lhs: f32, %rhs: f32):
+      %sum = arith.addf %lhs, %rhs : f32
+      scf.reduce.return %sum : f32
+    }
+  }
+  return %res : f32
+}
