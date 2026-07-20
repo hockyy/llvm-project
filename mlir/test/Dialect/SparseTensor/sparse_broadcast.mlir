@@ -1,4 +1,4 @@
-// RUN: mlir-opt %s --sparse-reinterpret-map --sparsification --canonicalize --cse | FileCheck %s
+// RUN: mlir-opt %s --sparse-reinterpret-map --sparsification --canonicalize --cse --split-input-file | FileCheck %s
 
 #DCSR = #sparse_tensor.encoding<{ map = (d0, d1) -> (d0 : compressed, d1 : compressed) }>
 #SparseTensor = #sparse_tensor.encoding<{ map = (d0, d1, d2) -> (d0 : compressed, d1 : compressed, d2 : compressed) }>
@@ -52,4 +52,74 @@ module @func_sparse {
     } -> tensor<4x3x5xi32, #SparseTensor>
     return %1 : tensor<4x3x5xi32, #SparseTensor>
   }
+}
+
+// -----
+
+// Sparse tensor co-iterated with a broadcasted dense tensor under add/sub uses
+// a union lattice. Preparing only the first lattice point used to leave dense
+// iterators uninitialized and crash in TrivialIterator::genForCond.
+#Sparse3D = #sparse_tensor.encoding<{ map = (d0, d1, d2) -> (d0 : compressed, d1 : compressed, d2 : compressed) }>
+
+// CHECK-LABEL: @sparse_dense_broadcast_subf(
+// CHECK:       scf.for
+// CHECK:       tensor.insert
+func.func @sparse_dense_broadcast_subf(
+    %a: tensor<?x?x?xf32, #Sparse3D>, %b: tensor<?x?xf32>)
+    -> tensor<?x?x?xf32, #Sparse3D> {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %c2 = arith.constant 2 : index
+  %d0 = tensor.dim %a, %c0 : tensor<?x?x?xf32, #Sparse3D>
+  %d1 = tensor.dim %a, %c1 : tensor<?x?x?xf32, #Sparse3D>
+  %d2 = tensor.dim %a, %c2 : tensor<?x?x?xf32, #Sparse3D>
+  %o = bufferization.alloc_tensor(%d0, %d1, %d2) : tensor<?x?x?xf32, #Sparse3D>
+  %0 = linalg.generic {
+      indexing_maps = [
+        affine_map<(d0, d1, d2) -> (d0, d1, d2)>,
+        affine_map<(d0, d1, d2) -> (d0, d2)>,
+        affine_map<(d0, d1, d2) -> (d0, d1, d2)>
+      ],
+      iterator_types = ["parallel", "parallel", "parallel"]}
+      ins(%a, %b : tensor<?x?x?xf32, #Sparse3D>, tensor<?x?xf32>)
+      outs(%o : tensor<?x?x?xf32, #Sparse3D>) attrs = {sorted = true} {
+  ^bb0(%x: f32, %y: f32, %z: f32):
+    %1 = arith.subf %x, %y : f32
+    linalg.yield %1 : f32
+  } -> tensor<?x?x?xf32, #Sparse3D>
+  return %0 : tensor<?x?x?xf32, #Sparse3D>
+}
+
+// -----
+
+#Sparse3D = #sparse_tensor.encoding<{ map = (d0, d1, d2) -> (d0 : compressed, d1 : compressed, d2 : compressed) }>
+
+// CHECK-LABEL: @sparse_dense_broadcast_exp(
+// CHECK:       math.exp
+// CHECK:       tensor.insert
+func.func @sparse_dense_broadcast_exp(
+    %a: tensor<?x?x?xf32, #Sparse3D>, %b: tensor<?x?xf32>)
+    -> tensor<?x?x?xf32, #Sparse3D> {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %c2 = arith.constant 2 : index
+  %d0 = tensor.dim %a, %c0 : tensor<?x?x?xf32, #Sparse3D>
+  %d1 = tensor.dim %a, %c1 : tensor<?x?x?xf32, #Sparse3D>
+  %d2 = tensor.dim %a, %c2 : tensor<?x?x?xf32, #Sparse3D>
+  %o = bufferization.alloc_tensor(%d0, %d1, %d2) : tensor<?x?x?xf32, #Sparse3D>
+  %0 = linalg.generic {
+      indexing_maps = [
+        affine_map<(d0, d1, d2) -> (d0, d1, d2)>,
+        affine_map<(d0, d1, d2) -> (d0, d2)>,
+        affine_map<(d0, d1, d2) -> (d0, d1, d2)>
+      ],
+      iterator_types = ["parallel", "parallel", "parallel"]}
+      ins(%a, %b : tensor<?x?x?xf32, #Sparse3D>, tensor<?x?xf32>)
+      outs(%o : tensor<?x?x?xf32, #Sparse3D>) attrs = {sorted = true} {
+  ^bb0(%x: f32, %y: f32, %z: f32):
+    %1 = arith.subf %x, %y : f32
+    %2 = math.exp %1 : f32
+    linalg.yield %2 : f32
+  } -> tensor<?x?x?xf32, #Sparse3D>
+  return %0 : tensor<?x?x?xf32, #Sparse3D>
 }

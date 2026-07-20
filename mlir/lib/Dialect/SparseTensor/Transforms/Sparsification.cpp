@@ -1126,17 +1126,21 @@ static bool startLoopSeq(CodegenEnv &env, OpBuilder &builder, ExprId exp,
   // Emit access pattern expansion for sparse tensor output.
   genExpand(env, builder, curr, /*isStart=*/true);
   // Emit further initialization at this loop sequence level.
-  const LatPointId l0 = env.set(lts)[0];
-
+  // Prepare the union of tensor levels across *all* lattice points, not just
+  // the first. Union lattices (e.g. sparse + dense broadcast with add/sub)
+  // introduce dense/synthetic levels on later points; skipping them leaves
+  // TrivialIterator::posLo uninitialized and crashes in genForCond/deref.
   SmallVector<TensorLevel> tidLvls;
-  getAllTidLvlsInLatPoints(env, l0, curr, [&](TensorLevel tl, AffineExpr) {
-    // TODO: remove this! The same tensor level might be added for multiple
-    // times due to the special handling for all-dense "sparse" output tensor
-    // (see L1038).
-    if (llvm::is_contained(tidLvls, tl))
-      return;
-    tidLvls.emplace_back(tl);
-  });
+  for (const LatPointId li : env.set(lts)) {
+    getAllTidLvlsInLatPoints(env, li, curr, [&](TensorLevel tl, AffineExpr) {
+      // TODO: remove this! The same tensor level might be added for multiple
+      // times due to the special handling for all-dense "sparse" output tensor
+      // (see L1038).
+      if (llvm::is_contained(tidLvls, tl))
+        return;
+      tidLvls.emplace_back(tl);
+    });
+  }
 
   env.emitter().enterNewLoopSeq(builder, env.op().getLoc(), tidLvls);
 

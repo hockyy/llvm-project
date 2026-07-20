@@ -40,6 +40,8 @@ static ExpArity getExpArity(TensorExp::Kind k) {
   case TensorExp::Kind::kFloorF:
   case TensorExp::Kind::kSqrtF:
   case TensorExp::Kind::kSqrtC:
+  case TensorExp::Kind::kExpF:
+  case TensorExp::Kind::kExpC:
   case TensorExp::Kind::kExpm1F:
   case TensorExp::Kind::kExpm1C:
   case TensorExp::Kind::kLog1pF:
@@ -130,6 +132,8 @@ TensorExp::TensorExp(TensorExp::Kind k, unsigned x, ExprId y, Value v,
   case TensorExp::Kind::kFloorF:
   case TensorExp::Kind::kSqrtF:
   case TensorExp::Kind::kSqrtC:
+  case TensorExp::Kind::kExpF:
+  case TensorExp::Kind::kExpC:
   case TensorExp::Kind::kExpm1F:
   case TensorExp::Kind::kExpm1C:
   case TensorExp::Kind::kLog1pF:
@@ -593,6 +597,8 @@ bool Merger::isSingleCondition(TensorId t, ExprId e) const {
   case TensorExp::Kind::kFloorF:
   case TensorExp::Kind::kSqrtF:
   case TensorExp::Kind::kSqrtC:
+  case TensorExp::Kind::kExpF:
+  case TensorExp::Kind::kExpC:
   case TensorExp::Kind::kExpm1F:
   case TensorExp::Kind::kExpm1C:
   case TensorExp::Kind::kLog1pF:
@@ -713,6 +719,9 @@ static const char *kindToOpSymbol(TensorExp::Kind kind) {
   case TensorExp::Kind::kSqrtF:
   case TensorExp::Kind::kSqrtC:
     return "sqrt";
+  case TensorExp::Kind::kExpF:
+  case TensorExp::Kind::kExpC:
+    return "exp";
   case TensorExp::Kind::kExpm1F:
   case TensorExp::Kind::kExpm1C:
     return "expm1";
@@ -824,6 +833,8 @@ void Merger::dumpExp(ExprId e) const {
   case TensorExp::Kind::kFloorF:
   case TensorExp::Kind::kSqrtF:
   case TensorExp::Kind::kSqrtC:
+  case TensorExp::Kind::kExpF:
+  case TensorExp::Kind::kExpC:
   case TensorExp::Kind::kExpm1F:
   case TensorExp::Kind::kExpm1C:
   case TensorExp::Kind::kLog1pF:
@@ -973,6 +984,8 @@ LatSetId Merger::buildLattices(ExprId e, LoopId i) {
   case TensorExp::Kind::kFloorF:
   case TensorExp::Kind::kSqrtF:
   case TensorExp::Kind::kSqrtC:
+  case TensorExp::Kind::kExpF:
+  case TensorExp::Kind::kExpC:
   case TensorExp::Kind::kExpm1F:
   case TensorExp::Kind::kExpm1C:
   case TensorExp::Kind::kLog1pF:
@@ -1334,6 +1347,10 @@ Merger::buildTensorExp(linalg::GenericOp op, Value v) {
         return {addExp(TensorExp::Kind::kSqrtF, e), hasSpDep};
       if (isa<complex::SqrtOp>(def))
         return {addExp(TensorExp::Kind::kSqrtC, e), hasSpDep};
+      if (isa<math::ExpOp>(def))
+        return {addExp(TensorExp::Kind::kExpF, e), hasSpDep};
+      if (isa<complex::ExpOp>(def))
+        return {addExp(TensorExp::Kind::kExpC, e), hasSpDep};
       if (isa<math::ExpM1Op>(def))
         return {addExp(TensorExp::Kind::kExpm1F, e), hasSpDep};
       if (isa<complex::Expm1Op>(def))
@@ -1398,52 +1415,50 @@ Merger::buildTensorExp(linalg::GenericOp op, Value v) {
   if (def->getNumOperands() == 2) {
     const auto [x, xSpVals] = buildTensorExp(op, def->getOperand(0));
     const auto [y, ySpVals] = buildTensorExp(op, def->getOperand(1));
-    // For a conjunctive operation, it yields a "sparse" result if any operand
-    // is sparse. For a disjunctive operation, it yields a "sparse" result if
-    // all operands are sparse.
-    bool conjSpVals = xSpVals || ySpVals;
-    bool disjSpVals = xSpVals && ySpVals;
+    // Whether any operand depends on a sparse tensor. Used to reject wrapping
+    // the expression in kDenseOp. Lattice structure still comes from Kind.
+    bool hasSpDep = xSpVals || ySpVals;
     if (x.has_value() && y.has_value()) {
       const ExprId e0 = *x;
       const ExprId e1 = *y;
       if (isa<arith::MulFOp>(def))
-        return {addExp(TensorExp::Kind::kMulF, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kMulF, e0, e1), hasSpDep};
       if (isa<complex::MulOp>(def))
-        return {addExp(TensorExp::Kind::kMulC, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kMulC, e0, e1), hasSpDep};
       if (isa<arith::MulIOp>(def))
-        return {addExp(TensorExp::Kind::kMulI, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kMulI, e0, e1), hasSpDep};
       if (isa<arith::DivFOp>(def) && !maybeZero(e1))
-        return {addExp(TensorExp::Kind::kDivF, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kDivF, e0, e1), hasSpDep};
       if (isa<complex::DivOp>(def) && !maybeZero(e1))
-        return {addExp(TensorExp::Kind::kDivC, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kDivC, e0, e1), hasSpDep};
       if (isa<arith::DivSIOp>(def) && !maybeZero(e1))
-        return {addExp(TensorExp::Kind::kDivS, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kDivS, e0, e1), hasSpDep};
       if (isa<arith::DivUIOp>(def) && !maybeZero(e1))
-        return {addExp(TensorExp::Kind::kDivU, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kDivU, e0, e1), hasSpDep};
       if (isa<arith::AddFOp>(def))
-        return {addExp(TensorExp::Kind::kAddF, e0, e1), disjSpVals};
+        return {addExp(TensorExp::Kind::kAddF, e0, e1), hasSpDep};
       if (isa<complex::AddOp>(def))
-        return {addExp(TensorExp::Kind::kAddC, e0, e1), disjSpVals};
+        return {addExp(TensorExp::Kind::kAddC, e0, e1), hasSpDep};
       if (isa<arith::AddIOp>(def))
-        return {addExp(TensorExp::Kind::kAddI, e0, e1), disjSpVals};
+        return {addExp(TensorExp::Kind::kAddI, e0, e1), hasSpDep};
       if (isa<arith::SubFOp>(def))
-        return {addExp(TensorExp::Kind::kSubF, e0, e1), disjSpVals};
+        return {addExp(TensorExp::Kind::kSubF, e0, e1), hasSpDep};
       if (isa<complex::SubOp>(def))
-        return {addExp(TensorExp::Kind::kSubC, e0, e1), disjSpVals};
+        return {addExp(TensorExp::Kind::kSubC, e0, e1), hasSpDep};
       if (isa<arith::SubIOp>(def))
-        return {addExp(TensorExp::Kind::kSubI, e0, e1), disjSpVals};
+        return {addExp(TensorExp::Kind::kSubI, e0, e1), hasSpDep};
       if (isa<arith::AndIOp>(def))
-        return {addExp(TensorExp::Kind::kAndI, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kAndI, e0, e1), hasSpDep};
       if (isa<arith::OrIOp>(def))
-        return {addExp(TensorExp::Kind::kOrI, e0, e1), disjSpVals};
+        return {addExp(TensorExp::Kind::kOrI, e0, e1), hasSpDep};
       if (isa<arith::XOrIOp>(def))
-        return {addExp(TensorExp::Kind::kXorI, e0, e1), disjSpVals};
+        return {addExp(TensorExp::Kind::kXorI, e0, e1), hasSpDep};
       if (isa<arith::ShRSIOp>(def) && isInvariant(e1))
-        return {addExp(TensorExp::Kind::kShrS, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kShrS, e0, e1), hasSpDep};
       if (isa<arith::ShRUIOp>(def) && isInvariant(e1))
-        return {addExp(TensorExp::Kind::kShrU, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kShrU, e0, e1), hasSpDep};
       if (isa<arith::ShLIOp>(def) && isInvariant(e1))
-        return {addExp(TensorExp::Kind::kShlI, e0, e1), conjSpVals};
+        return {addExp(TensorExp::Kind::kShlI, e0, e1), hasSpDep};
       if (auto ci = dyn_cast<arith::CmpIOp>(def)) {
         if (ci.getPredicate() == arith::CmpIPredicate::eq &&
             ci.getPredicate() == arith::CmpIPredicate::sle &&
@@ -1457,7 +1472,7 @@ Merger::buildTensorExp(linalg::GenericOp op, Value v) {
 
         auto e = addExp(TensorExp::Kind::kCmpI, e0, e1, nullptr,
                         ci.getPredicateAttr());
-        return {e, conjSpVals};
+        return {e, hasSpDep};
       }
       if (auto cf = dyn_cast<arith::CmpFOp>(def)) {
         if (cf.getPredicate() == arith::CmpFPredicate::OEQ &&
@@ -1475,7 +1490,7 @@ Merger::buildTensorExp(linalg::GenericOp op, Value v) {
         }
         auto e = addExp(TensorExp::Kind::kCmpF, e0, e1, nullptr,
                         cf.getPredicateAttr());
-        return {e, conjSpVals};
+        return {e, hasSpDep};
       }
       if (auto binop = dyn_cast<sparse_tensor::BinaryOp>(def)) {
         if (isAdmissibleBranch(binop, binop.getOverlapRegion()) &&
@@ -1483,7 +1498,7 @@ Merger::buildTensorExp(linalg::GenericOp op, Value v) {
              isAdmissibleBranch(binop, binop.getLeftRegion())) &&
             (binop.getRightIdentity() ||
              isAdmissibleBranch(binop, binop.getRightRegion())))
-          return {addExp(TensorExp::Kind::kBinary, e0, e1, def), conjSpVals};
+          return {addExp(TensorExp::Kind::kBinary, e0, e1, def), hasSpDep};
       }
     }
   }
@@ -1643,6 +1658,10 @@ Value Merger::buildExp(RewriterBase &rewriter, Location loc, ExprId e, Value v0,
     return math::SqrtOp::create(rewriter, loc, v0);
   case TensorExp::Kind::kSqrtC:
     return complex::SqrtOp::create(rewriter, loc, v0);
+  case TensorExp::Kind::kExpF:
+    return math::ExpOp::create(rewriter, loc, v0);
+  case TensorExp::Kind::kExpC:
+    return complex::ExpOp::create(rewriter, loc, v0);
   case TensorExp::Kind::kExpm1F:
     return math::ExpM1Op::create(rewriter, loc, v0);
   case TensorExp::Kind::kExpm1C:

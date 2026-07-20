@@ -140,6 +140,8 @@ enum class TensorExp::Kind {
   kFloorF,
   kSqrtF,
   kSqrtC,
+  kExpF,
+  kExpC,
   kExpm1F,
   kExpm1C,
   kLog1pF,
