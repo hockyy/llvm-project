@@ -15,3 +15,7 @@ llvm_add_library(MLIRPdllLspServerLib
   MLIRPDLLParser
   MLIRLspServerSupportLib
   )
+
+# Required when BUILD_SHARED_LIBS=ON so installed mlir-pdll-lsp-server can find
+# the shared library (see llvm_add_library defaults).
+add_mlir_library_install(MLIRPdllLspServerLib)

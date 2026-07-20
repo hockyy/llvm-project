@@ -19,3 +19,7 @@ llvm_add_library(TableGenLspServerLib
   MLIRLspServerSupportLib
   MLIRSupport
   )
+
+# Required when BUILD_SHARED_LIBS=ON so installed tblgen-lsp-server can find the
+# shared library (see llvm_add_library defaults).
+add_mlir_library_install(TableGenLspServerLib)
