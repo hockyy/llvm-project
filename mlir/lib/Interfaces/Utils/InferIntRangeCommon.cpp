@@ -835,8 +835,9 @@ mlir::intrange::inferAffineExpr(AffineExpr expr,
     const APInt &rhsMax = rhs.smax();
     unsigned width = rhsMin.getBitWidth();
 
-    // Guard against division by zero.
-    if (rhsMax.isZero())
+    // Guard against a non-positive divisor (e.g. `d0 mod 0`). Affine maps can
+    // still contain these; avoid forming [0, rhs-1] or calling udiv/urem.
+    if (!rhsMax.isStrictlyPositive())
       return ConstantIntRanges::maxRange(width);
 
     APInt zero = APInt::getZero(width);
@@ -877,7 +878,12 @@ mlir::intrange::inferAffineExpr(AffineExpr expr,
         inferAffineExpr(binExpr.getLHS(), dimRanges, symbolRanges);
     ConstantIntRanges rhs =
         inferAffineExpr(binExpr.getRHS(), dimRanges, symbolRanges);
-    // Affine floordiv requires strictly positive divisor (> 0).
+    // Affine floordiv requires a strictly positive divisor. When the inferred
+    // RHS cannot be positive (e.g. constant 0), clampToPositive produces an
+    // inverted range that still looks "divisible" to inferDivSRange and then
+    // asserts on divide-by-zero — return an unbounded range instead.
+    if (!rhs.smax().isStrictlyPositive())
+      return ConstantIntRanges::maxRange(rhs.smin().getBitWidth());
     // Clamp divisor lower bound to 1 for tighter range inference.
     ConstantIntRanges clampedRhs = clampToPositive(rhs);
     return inferFloorDivS({lhs, clampedRhs});
@@ -888,7 +894,9 @@ mlir::intrange::inferAffineExpr(AffineExpr expr,
         inferAffineExpr(binExpr.getLHS(), dimRanges, symbolRanges);
     ConstantIntRanges rhs =
         inferAffineExpr(binExpr.getRHS(), dimRanges, symbolRanges);
-    // Affine ceildiv requires strictly positive divisor (> 0).
+    // Same non-positive divisor guard as floordiv.
+    if (!rhs.smax().isStrictlyPositive())
+      return ConstantIntRanges::maxRange(rhs.smin().getBitWidth());
     // Clamp divisor lower bound to 1 for tighter range inference.
     ConstantIntRanges clampedRhs = clampToPositive(rhs);
     return inferCeilDivS({lhs, clampedRhs});

@@ -171,3 +171,20 @@ func.func @affine_apply_mod_negative_dividend() -> index {
   %1 = test.reflect_bounds %0 : index
   func.return %1 : index
 }
+
+// Regression test for https://github.com/llvm/llvm-project/issues/205072:
+// mod/floordiv/ceildiv by 0 must not assert during range inference.
+// CHECK-LABEL: func @affine_apply_div_by_zero
+// CHECK: test.reflect_bounds
+// CHECK: test.reflect_bounds
+// CHECK: test.reflect_bounds
+func.func @affine_apply_div_by_zero() -> (index, index, index) {
+  %c16 = arith.constant 16 : index
+  %0 = affine.apply affine_map<(d0) -> (d0 mod 0)>(%c16)
+  %1 = affine.apply affine_map<(d0) -> (d0 floordiv 0)>(%c16)
+  %2 = affine.apply affine_map<(d0) -> (d0 ceildiv 0)>(%c16)
+  %r0 = test.reflect_bounds %0 : index
+  %r1 = test.reflect_bounds %1 : index
+  %r2 = test.reflect_bounds %2 : index
+  func.return %r0, %r1, %r2 : index, index, index
+}
