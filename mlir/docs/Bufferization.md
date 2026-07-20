@@ -21,6 +21,11 @@ buffer-level optimizations such as allocation hoisting, and
 [insert buffer deallocation ops](OwnershipBasedBufferDeallocation.md) so that
 the resulting `memref` IR has no memory leaks.
 
+When promoting buffer results of bufferized functions to out-params, run
+`-drop-equivalent-buffer-results` *before* `-buffer-results-to-out-params`.
+Reversing that order can produce incorrect IR. See
+`mlir/test/Dialect/Bufferization/Transforms/one-shot-module-bufferize-out-params.mlir`.
+
 ## Deprecated Passes
 
 The buffer deallocation pass has been deprecated in favor of the ownership-based

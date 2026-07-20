@@ -402,12 +402,20 @@ static void printFirstOfEach(MlirContext ctx, MlirOperation operation) {
           mlirIdentifierEqual(ident, identAgain));
   // CHECK: Identifier equal: 1
 
-  // Get the block terminator and print it.
+  // Get the last operation and the block terminator and print them.
+  MlirOperation lastOperation = mlirBlockGetLastOperation(block);
+  fprintf(stderr, "Last operation: ");
+  mlirOperationPrint(lastOperation, printToStderr, NULL);
+  fprintf(stderr, "\n");
+  // CHECK: Last operation: func.return
   MlirOperation terminator = mlirBlockGetTerminator(block);
   fprintf(stderr, "Terminator: ");
   mlirOperationPrint(terminator, printToStderr, NULL);
   fprintf(stderr, "\n");
   // CHECK: Terminator: func.return
+  fprintf(stderr, "Last equals terminator: %d\n",
+          lastOperation.ptr == terminator.ptr);
+  // CHECK: Last equals terminator: 1
 
   // Get the attribute by name.
   bool hasValueAttr = mlirOperationHasInherentAttributeByName(

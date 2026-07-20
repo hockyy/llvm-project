@@ -231,6 +231,8 @@ protected:
     case TensorExp::Kind::kFloorF:
     case TensorExp::Kind::kSqrtF:
     case TensorExp::Kind::kSqrtC:
+    case TensorExp::Kind::kExpF:
+    case TensorExp::Kind::kExpC:
     case TensorExp::Kind::kExpm1F:
     case TensorExp::Kind::kExpm1C:
     case TensorExp::Kind::kLog1pF:

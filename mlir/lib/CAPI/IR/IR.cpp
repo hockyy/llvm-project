@@ -1021,6 +1021,13 @@ MlirOperation mlirBlockGetFirstOperation(MlirBlock block) {
   return wrap(&cppBlock->front());
 }
 
+MlirOperation mlirBlockGetLastOperation(MlirBlock block) {
+  Block *cppBlock = unwrap(block);
+  if (cppBlock->empty())
+    return wrap(static_cast<Operation *>(nullptr));
+  return wrap(&cppBlock->back());
+}
+
 MlirOperation mlirBlockGetTerminator(MlirBlock block) {
   Block *cppBlock = unwrap(block);
   if (cppBlock->empty())
